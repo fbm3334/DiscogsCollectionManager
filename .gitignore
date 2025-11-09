@@ -208,3 +208,6 @@ __marimo__/
 
 # secrets.yml
 secrets.yml
+
+# Cache folder
+cache/
