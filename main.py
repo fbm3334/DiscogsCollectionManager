@@ -5,6 +5,7 @@ main.py
 # Python native imports
 import os
 import pprint
+import pickle
 import re
 import webbrowser
 
@@ -12,6 +13,7 @@ import webbrowser
 import discogs_client as dc
 import yaml
 import pandas as pd
+from tqdm import tqdm
 
 # Constants
 # Client name
@@ -53,10 +55,13 @@ def get_settings_yaml():
             file.write("location_field: 4\n")
         exit(1)
 
-def get_item_location(release: dc.Release):
+def get_item_location(release: dc.CollectionItemInstance):
     '''
     Get the location of a release from the user's collection.
     '''
+    global location_field
+    if location_field is None:
+        raise ValueError("location_field is not set. Please check your settings.yml file.")
     try:
         notes = release.notes
         loc = next((item['value'] for item in notes if item['field_id'] == location_field), '')
@@ -65,24 +70,53 @@ def get_item_location(release: dc.Release):
 
     return loc
 
-def collect_release_data(user):
+def get_collection_items(user):
+    '''
+    Get all items in the user's Discogs collection.
+    '''
+    cache_count = 0
+
+    if os.path.exists('cache/collection_items.pkl'):
+        with open('cache/collection_items.pkl', 'rb') as f:
+            items = pickle.load(f)
+            print(f"Loaded {len(items)} items from cache.")
+    else:
+        items = []
+    
+    # Check that the item does not already exist in the cache
+    for item in tqdm(user.collection_folders[0].releases):
+        if item not in items:
+            items.append(item)
+            cache_count += 1
+
+    print(f"Added {cache_count} new items to cache.")
+    with open('cache/collection_items.pkl', 'wb') as f:
+        pickle.dump(items, f, protocol=pickle.HIGHEST_PROTOCOL)
+    return items
+
+def collect_release_data(items_list):
     '''
     Collect release data from the user's Discogs collection.
     '''
-    releases = []
-    for item in user.collection_folders[0].releases:
+    release_data_list = []
+    for item in items_list:
+        # Fetch all release data at once to minimize API calls
         release = item.release
+        release_data = release.data    # Access the raw data directly if possible
+        
+        # Get notes/location once
+        location = get_item_location(item)
+        
         data = {
-            'id': release.id,
-            'title': release.title,
-            'year': release.year,
-            'artists': ', '.join([artist.name for artist in release.artists]),
-            'location': get_item_location(release),
-            'url': release.url
-
+            'id': release_data.get('id', ''),
+            'title': release_data.get('title', ''),
+            'year': release_data.get('year', ''),
+            'artists': ', '.join(artist.get('name', '') for artist in release_data.get('artists', [])),
+            'location': location,
+            'url': release_data.get('uri', '')
         }
-        releases.append(data)
-    return pd.DataFrame(releases)
+        release_data_list.append(data)
+    return pd.DataFrame(release_data_list)
 
 def main():
     '''
@@ -100,9 +134,9 @@ def main():
     d = dc.Client(CLIENT_NAME, user_token=pat)
     user = d.identity()
 
-    # Collect release data
-    df = collect_release_data(user)
-    print(df)
+    # Get release data
+    items_list = get_collection_items(user)
+    df = collect_release_data(items_list)
 
 
 if __name__ == '__main__':
