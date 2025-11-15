@@ -20,6 +20,8 @@ from tqdm import tqdm
 CLIENT_NAME = 'FBM3334Client/0.1'
 
 # Global variables
+# Settings dictionary
+settings = {}
 # Personal access token for Discogs API
 pat = None
 # Location field (i.e. which custom field stores the location data)
@@ -45,6 +47,7 @@ def get_settings_yaml():
     Load settings from settings.yml file.
     '''
     global location_field
+    global settings
     try:
         with open('settings.yml', 'r') as file:
             settings = yaml.safe_load(file)
@@ -120,60 +123,27 @@ def collect_release_data(items_list):
         release_data_list.append(data)
     return pd.DataFrame(release_data_list)
 
-def generate_latex_pdf(df: pd.DataFrame, output_file: str):
+def df_exporter(df: pd.DataFrame, filename: str):
     '''
-    Generate a LaTeX PDF with a table from the releases DataFrame.
+    Export the DataFrame to the supported formats.
+
+    :param df: DataFrame to export
+    :type df: pd.DataFrame
+    :param filename: Base filename for the exported files
+    :type filename: str
     '''
-    from pylatex import Document, Section, Subsection, Command
-    from pylatex.utils import NoEscape, bold
-
-    doc = Document()
-    with doc.create(Section('Discogs Collection')):
-        with doc.create(Subsection('Releases')):
-            # Create table header
-            header = ['ID', 'Title', 'Year', 'Artists', 'Format', 'Location', 'URL']
-            table_spec = ' | '.join(['l'] * len(header))
-            doc.append(NoEscape(r'\begin{tabular}{' + table_spec + r'}'))
-            doc.append(NoEscape(r'\hline'))
-            doc.append(NoEscape(' & '.join(bold(col) for col in header) + r' \\'))
-            doc.append(NoEscape(r'\hline'))
-
-            # Add table rows
-            for _, row in df.iterrows():
-                row_data = [
-                    str(row['id']),
-                    row['title'],
-                    str(row['year']),
-                    row['artists'],
-                    row['format'],
-                    row['location'],
-                    NoEscape(r'\href{' + row['url'] + r'}{' + row['url'] + r'}')
-                ]
-                doc.append(NoEscape(' & '.join(row_data) + r' \\'))
-                doc.append(NoEscape(r'\hline'))
-
-            doc.append(NoEscape(r'\end{tabular}'))
-    
-    # Ensure the output directory exists. pylatex will attempt to open
-    # '<output_file>.tex' for writing, so the directory must exist first.
-    out_dir = os.path.dirname(output_file)
-    if out_dir and not os.path.exists(out_dir):
-        os.makedirs(out_dir, exist_ok=True)
-
-    doc.generate_pdf(output_file, clean_tex=False)
-
-def sort_releases_by_artist(df: pd.DataFrame):
-    '''
-    Sort releases DataFrame by artist name, year and title, excluding various prefixes.
-    '''
-    def clean_artist_name(name: str) -> str:
-        prefixes = ['The ', 'A ', 'An ', 'Le ', 'La ', 'Les ', 'El ', 'Los ', 'Das ', 'Der ', 'Die ']
-        pattern = re.compile(r'^(?:' + '|'.join(prefixes) + r')', re.IGNORECASE)
-        return pattern.sub('', name).strip()
-    df['clean_artist'] = df['artists'].apply(clean_artist_name)
-    df_sorted = df.sort_values(by=['clean_artist', 'year', 'title'])
-    df_sorted = df_sorted.drop(columns=['clean_artist'])
-    return df_sorted
+    output_folder = settings.get('output_folder', 'output')
+    os.makedirs(output_folder, exist_ok=True)
+    print(settings)
+    export_types = settings.get('export_types', {})
+    if export_types.get('csv', False):
+        csv_path = os.path.join(output_folder, f'{filename}.csv')
+        df.to_csv(csv_path, index=False)
+        print(f'Exported CSV to {csv_path}')
+    if export_types.get('excel', False):
+        excel_path = os.path.join(output_folder, f'{filename}.xlsx')
+        df.to_excel(excel_path, index=False)
+        print(f'Exported Excel to {excel_path}')
 
 def main():
     '''
@@ -194,15 +164,7 @@ def main():
     # Get release data
     items_list = get_collection_items(user)
     df = collect_release_data(items_list)
-    df_sorted = sort_releases_by_artist(df)
-    
-    # Make separate DataFrames for each location and generate PDFs
-    locations = df_sorted['location'].unique()
-    for loc in locations:
-        df_loc = df_sorted[df_sorted['location'] == loc]
-        output_file = f'output/collection_{loc.replace(" ", "_")}'
-        generate_latex_pdf(df_loc, output_file)
-        print(f"Generated PDF for location '{loc}': {output_file}.pdf")
+    df_exporter(df, 'discogs_collection_sorted')
 
 if __name__ == '__main__':
     main()
