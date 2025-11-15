@@ -1,1 +1,5 @@
 location_field: 4
+output_folder: output
+export_types:
+    csv: true
+    excel: true

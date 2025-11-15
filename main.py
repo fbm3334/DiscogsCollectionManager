@@ -20,6 +20,8 @@ from tqdm import tqdm
 CLIENT_NAME = 'FBM3334Client/0.1'
 
 # Global variables
+# Settings dictionary
+settings = {}
 # Personal access token for Discogs API
 pat = None
 # Location field (i.e. which custom field stores the location data)
@@ -45,6 +47,7 @@ def get_settings_yaml():
     Load settings from settings.yml file.
     '''
     global location_field
+    global settings
     try:
         with open('settings.yml', 'r') as file:
             settings = yaml.safe_load(file)
@@ -118,6 +121,28 @@ def collect_release_data(items_list):
         release_data_list.append(data)
     return pd.DataFrame(release_data_list)
 
+def df_exporter(df: pd.DataFrame, filename: str):
+    '''
+    Export the DataFrame to the supported formats.
+
+    :param df: DataFrame to export
+    :type df: pd.DataFrame
+    :param filename: Base filename for the exported files
+    :type filename: str
+    '''
+    output_folder = settings.get('output_folder', 'output')
+    os.makedirs(output_folder, exist_ok=True)
+    print(settings)
+    export_types = settings.get('export_types', {})
+    if export_types.get('csv', False):
+        csv_path = os.path.join(output_folder, f'{filename}.csv')
+        df.to_csv(csv_path, index=False)
+        print(f'Exported CSV to {csv_path}')
+    if export_types.get('excel', False):
+        excel_path = os.path.join(output_folder, f'{filename}.xlsx')
+        df.to_excel(excel_path, index=False)
+        print(f'Exported Excel to {excel_path}')
+
 def main():
     '''
     Main function to sort Discogs collection based on location field.
@@ -137,7 +162,7 @@ def main():
     # Get release data
     items_list = get_collection_items(user)
     df = collect_release_data(items_list)
-
+    df_exporter(df, 'discogs_collection_sorted')
 
 if __name__ == '__main__':
     main()
