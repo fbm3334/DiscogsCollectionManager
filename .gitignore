@@ -211,3 +211,4 @@ secrets.yml
 
 # Cache folder
 cache/
+output/
