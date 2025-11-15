@@ -9,11 +9,13 @@ import pickle
 import re
 import webbrowser
 
+
 # Third-party imports
 import discogs_client as dc
 import yaml
 import pandas as pd
 from tqdm import tqdm
+import pymupdf
 
 # Constants
 # Client name
@@ -137,6 +139,18 @@ def main():
     # Get release data
     items_list = get_collection_items(user)
     df = collect_release_data(items_list)
+    html = df.to_html(index=False)
+    story = pymupdf.Story(html=html)
+    writer = pymupdf.DocumentWriter('output/collection.pdf')
+    mediabox = pymupdf.paper_rect('A4')
+    where = mediabox + (36, 36, -36, -36)  # 36pt margins
+    more = True
+    while more:
+        dev = writer.begin_page(mediabox)
+        more, filled = story.place(where)
+        story.draw(dev)
+        writer.end_page()
+    writer.close()
 
 
 if __name__ == '__main__':
