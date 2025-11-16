@@ -3,6 +3,7 @@ main.py
 '''
 
 # Python native imports
+import concurrent.futures
 import os
 import pprint
 import pickle
@@ -17,6 +18,22 @@ import discogs_client as dc
 import yaml
 import pandas as pd
 from tqdm import tqdm
+
+import logging
+import sys
+
+# 1. Configure the root logger
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    # Ensure logs print to the console
+    stream=sys.stdout 
+)
+
+# 2. Set the log level for requests components to DEBUG
+# This is what prints the request/response headers
+logging.getLogger('urllib3').setLevel(logging.DEBUG)
+logging.getLogger('http.client').setLevel(logging.DEBUG)
 
 # Constants
 # Client name
@@ -97,6 +114,29 @@ def get_item_location(release: dc.CollectionItemInstance):
 
     return loc
 
+def fetch_release_data(client, item):
+    '''
+    Fetch release data from Discogs API.
+
+    :param dc: Discogs client object
+    :type dc: dc.Client
+    :param release_id: Release ID
+    :type release_id: int
+    :return: Discogs release object
+    :rtype: dc.Release
+    '''
+    
+    release_id = item.id
+    release = client.release(release_id)
+    release.refresh()
+    print(release)
+    artist_sort = release.artists_sort
+    #print(artist_sort)
+    basic_info = item.data.get('basic_information', None)
+    #print(basic_info)
+    return DiscogsReleaseInstance(id=release_id, release=release, basic_info=basic_info, artists_sort=artist_sort)
+
+
 def get_collection_items(dc, user, force_update=False):
     '''
     Get all items in the user's Discogs collection.
@@ -131,18 +171,14 @@ def get_collection_items(dc, user, force_update=False):
     else:
         print("Update interval has passed or update is forced, refreshing cache.")
         item_data.timestamp = time.time()
-        item_data.items = []
-        # Add to the cache
-        for item in tqdm(user.collection_folders[0].releases):
-            # Get the full release data
-            release_id = item.id
-            release = dc.release(release_id).fetch()
-            basic_info = item.data.get('basic_information', None)
-            artist_sort = release.data.get('artists_sort', None)
-            item = DiscogsReleaseInstance(id=release_id, release=release, basic_info=basic_info, artists_sort=artist_sort)
-            
-            item_data.items.append(item)
+        
+        releases_to_process = user.collection_folders[0].releases
+        
+        for release in tqdm(releases_to_process, desc="Fetching release data"):
+            discogs_release_instance = fetch_release_data(dc, release)
+            item_data.items.append(discogs_release_instance)
             cache_count += 1
+
 
     print(f"Added {cache_count} new items to cache.")
     with open('cache/collection_items.pkl', 'wb') as f:
@@ -179,7 +215,7 @@ def create_release_dict(release: DiscogsReleaseInstance):
         pass
     # Then add the rest from the release data
     data.update({
-        'artists_sort': release.release.artists_sort
+        'artists_sort': release.artists_sort,
     })
     return data
 
