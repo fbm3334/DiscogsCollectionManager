@@ -47,6 +47,7 @@ class DiscogsReleaseInstance:
     id: int
     release: dc.Release
     basic_info: dict | None = field(default=None)
+    artists_sort: str | None = field(default=None)
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Discogs Collection Sorter')
@@ -135,10 +136,11 @@ def get_collection_items(dc, user, force_update=False):
         for item in tqdm(user.collection_folders[0].releases):
             # Get the full release data
             release_id = item.id
-            release = dc.release(release_id)
+            release = dc.release(release_id).fetch()
             basic_info = item.data.get('basic_information', None)
-            item = DiscogsReleaseInstance(id=release_id, release=release, basic_info=basic_info)
-
+            artist_sort = release.data.get('artists_sort', None)
+            item = DiscogsReleaseInstance(id=release_id, release=release, basic_info=basic_info, artists_sort=artist_sort)
+            
             item_data.items.append(item)
             cache_count += 1
 
@@ -146,6 +148,40 @@ def get_collection_items(dc, user, force_update=False):
     with open('cache/collection_items.pkl', 'wb') as f:
         pickle.dump(item_data, f, protocol=pickle.HIGHEST_PROTOCOL)
     return item_data.items
+
+def create_release_dict(release: DiscogsReleaseInstance):
+    '''
+    Create a dictionary of release data from a DiscogsReleaseInstance.
+
+    :param release: DiscogsReleaseInstance object
+    :type release: DiscogsReleaseInstance
+    :return: Dictionary of release data
+    :rtype: dict
+    '''
+    basic_data = release.basic_info
+    # Try to pull from basic info first
+    if basic_data:
+        data = {
+            'id': basic_data.get('id', ''),
+            'master_id': basic_data.get('master_id', ''),
+            'title': basic_data.get('title', ''),
+            'release_year': basic_data.get('year', ''),
+            'artists': ', '.join(artist.get('name', '') for artist in basic_data.get('artists', [])),
+            'genres': ', '.join(basic_data.get('genres', [])),
+            'styles': ', '.join(basic_data.get('styles', [])),
+            'format': ', '.join(fmt.get('name', '') for fmt in basic_data.get('formats', [])),
+            'labels': ', '.join(label.get('name', '') for label in basic_data.get('labels', [])),
+            'catnos': ', '.join(label.get('catno', '') for label in basic_data.get('labels', [])),
+            'url': f'https://www.discogs.com/release/{basic_data.get("id", "")}',
+            'image_url': basic_data.get('cover_image', '')
+        }
+    else:
+        pass
+    # Then add the rest from the release data
+    data.update({
+        'artists_sort': release.release.artists_sort
+    })
+    return data
 
 def collect_release_data(items_list):
     '''
@@ -158,19 +194,9 @@ def collect_release_data(items_list):
         release_data = release.data    # Access the raw data directly if possible
         
         # Get notes/location once
-        location = get_item_location(item)
-        
-        data = {
-            'id': release_data.get('id', ''),
-            'title': release_data.get('title', ''),
-            'year': release_data.get('year', ''),
-            'artists': ', '.join(artist.get('name', '') for artist in release_data.get('artists', [])),
-            'format': ', '.join(fmt.get('name', '') for fmt in release_data.get('formats', [])),
-            'location': location,
-            'url': f'https://www.discogs.com/release/{release_data.get('id', '')}' if release_data else '',
-            'image_url': release_data.get('cover_image', '')
-        }
-        release_data_list.append(data)
+        #location = get_item_location(item)
+    
+        release_data_list.append(create_release_dict(item))
     return pd.DataFrame(release_data_list)
 
 def df_exporter(df: pd.DataFrame, filename: str):
@@ -213,8 +239,9 @@ def main():
 
     # Get release data
     items_list = get_collection_items(d, user, force_update=force_update)
-    #df = collect_release_data(items_list)
-    #df_exporter(df, 'discogs_collection_sorted')
+    d = None  # Free up memory
+    df = collect_release_data(items_list)
+    df_exporter(df, 'discogs_collection_sorted')
 
 if __name__ == '__main__':
     main()
