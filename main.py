@@ -85,6 +85,7 @@ def get_collection_items(user):
             print(f"Loaded {len(items)} items from cache.")
     else:
         items = []
+        os.makedirs('cache', exist_ok=True)
     
     # Check that the item does not already exist in the cache
     for item in tqdm(user.collection_folders[0].releases):
