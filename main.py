@@ -101,8 +101,8 @@ def get_collection_items(user):
 
     # Check that the interval has passed first
     update_interval = settings.get('update_interval_hours', 24) * 3600
-    if time.time() - item_data.timestamp < update_interval:
-        print("Using cached data as update interval has not passed.")
+    if (time.time() - item_data.timestamp < update_interval) or not settings.get('auto_update', True):
+        print("Using cached data as update interval has not passed or auto updates are disabled.")
         return item_data.items
     else:
         print("Update interval has passed, refreshing cache.")
