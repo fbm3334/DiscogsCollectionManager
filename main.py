@@ -10,6 +10,7 @@ import re
 import webbrowser
 import time
 from dataclasses import dataclass, field
+import argparse
 
 # Third-party imports
 import discogs_client as dc
@@ -37,6 +38,10 @@ class DiscogsPickleCache:
     '''
     timestamp: float
     items: list
+
+# Argument parser
+parser = argparse.ArgumentParser(description='Discogs Collection Sorter')
+parser.add_argument('--force-update', action='store_true', help='Force update the collection data, ignoring cache.')
 
 def get_personal_access_token():
     '''
@@ -82,9 +87,16 @@ def get_item_location(release: dc.CollectionItemInstance):
 
     return loc
 
-def get_collection_items(user):
+def get_collection_items(user, force_update=False):
     '''
     Get all items in the user's Discogs collection.
+
+    :param user: Discogs user object
+    :type user: dc.User
+    :param force_update: Whether to force update the cache
+    :type force_update: bool
+    :return: List of collection items
+    :rtype: list
     '''
     item_data = DiscogsPickleCache(timestamp=0.0, items=[])
     cache_count = 0
@@ -101,11 +113,11 @@ def get_collection_items(user):
 
     # Check that the interval has passed first
     update_interval = settings.get('update_interval_hours', 24) * 3600
-    if (time.time() - item_data.timestamp < update_interval) or not settings.get('auto_update', True):
+    if ((time.time() - item_data.timestamp < update_interval) or not settings.get('auto_update', True)) and force_update is False:
         print("Using cached data as update interval has not passed or auto updates are disabled.")
         return item_data.items
     else:
-        print("Update interval has passed, refreshing cache.")
+        print("Update interval has passed or update is forced, refreshing cache.")
         item_data.timestamp = time.time()
         item_data.items = []
         # Add to the cache
@@ -169,7 +181,8 @@ def main():
     '''
     Main function to sort Discogs collection based on location field.
     '''
-    global location_field
+    args = parser.parse_args()
+    force_update = args.force_update
 
     # Load personal access token
     get_personal_access_token()
@@ -182,7 +195,7 @@ def main():
     user = d.identity()
 
     # Get release data
-    items_list = get_collection_items(user)
+    items_list = get_collection_items(user, force_update=force_update)
     df = collect_release_data(items_list)
     df_exporter(df, 'discogs_collection_sorted')
 
