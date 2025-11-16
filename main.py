@@ -39,6 +39,15 @@ class DiscogsPickleCache:
     timestamp: float
     items: list
 
+@dataclass
+class DiscogsReleaseInstance:
+    '''
+    Class to hold Discogs release instance data.
+    '''
+    id: int
+    release: dc.Release
+    basic_info: dict | None = field(default=None)
+
 # Argument parser
 parser = argparse.ArgumentParser(description='Discogs Collection Sorter')
 parser.add_argument('--force-update', action='store_true', help='Force update the collection data, ignoring cache.')
@@ -87,10 +96,12 @@ def get_item_location(release: dc.CollectionItemInstance):
 
     return loc
 
-def get_collection_items(user, force_update=False):
+def get_collection_items(dc, user, force_update=False):
     '''
     Get all items in the user's Discogs collection.
 
+    :param dc: Discogs client object
+    :type dc: dc.Client
     :param user: Discogs user object
     :type user: dc.User
     :param force_update: Whether to force update the cache
@@ -122,6 +133,12 @@ def get_collection_items(user, force_update=False):
         item_data.items = []
         # Add to the cache
         for item in tqdm(user.collection_folders[0].releases):
+            # Get the full release data
+            release_id = item.id
+            release = dc.release(release_id)
+            basic_info = item.data.get('basic_information', None)
+            item = DiscogsReleaseInstance(id=release_id, release=release, basic_info=basic_info)
+
             item_data.items.append(item)
             cache_count += 1
 
@@ -195,9 +212,9 @@ def main():
     user = d.identity()
 
     # Get release data
-    items_list = get_collection_items(user, force_update=force_update)
-    df = collect_release_data(items_list)
-    df_exporter(df, 'discogs_collection_sorted')
+    items_list = get_collection_items(d, user, force_update=force_update)
+    #df = collect_release_data(items_list)
+    #df_exporter(df, 'discogs_collection_sorted')
 
 if __name__ == '__main__':
     main()
