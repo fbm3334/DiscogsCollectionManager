@@ -8,6 +8,8 @@ import pprint
 import pickle
 import re
 import webbrowser
+import time
+from dataclasses import dataclass, field
 
 # Third-party imports
 import discogs_client as dc
@@ -26,6 +28,15 @@ settings = {}
 pat = None
 # Location field (i.e. which custom field stores the location data)
 location_field = None
+
+# Dataclasses
+@dataclass
+class DiscogsPickleCache:
+    '''
+    Class to handle Discogs pickle cache.
+    '''
+    timestamp: float
+    items: list
 
 def get_personal_access_token():
     '''
@@ -53,9 +64,7 @@ def get_settings_yaml():
             settings = yaml.safe_load(file)
             location_field = settings.get('location_field', None)
     except FileNotFoundError:
-        print("settings.yml file not found. This file has been created with default settings. Please edit it and rerun the program.")
-        with open('settings.yml', 'w') as file:
-            file.write("location_field: 4\n")
+        print("settings.yml file not found.")
         exit(1)
 
 def get_item_location(release: dc.CollectionItemInstance):
@@ -77,26 +86,37 @@ def get_collection_items(user):
     '''
     Get all items in the user's Discogs collection.
     '''
+    item_data = DiscogsPickleCache(timestamp=0.0, items=[])
     cache_count = 0
 
     if os.path.exists('cache/collection_items.pkl'):
         with open('cache/collection_items.pkl', 'rb') as f:
-            items = pickle.load(f)
-            print(f"Loaded {len(items)} items from cache.")
+            item_data = pickle.load(f)
+            print(f"Loaded {len(item_data.items)} items from cache.")
+            print(f"Cache timestamp: {time.ctime(item_data.timestamp)}")
     else:
-        items = []
         os.makedirs('cache', exist_ok=True)
-    
-    # Check that the item does not already exist in the cache
-    for item in tqdm(user.collection_folders[0].releases):
-        if item not in items:
-            items.append(item)
+        item_data.timestamp = 0.0
+        item_data.items = []
+
+    # Check that the interval has passed first
+    update_interval = settings.get('update_interval_hours', 24) * 3600
+    if time.time() - item_data.timestamp < update_interval:
+        print("Using cached data as update interval has not passed.")
+        return item_data.items
+    else:
+        print("Update interval has passed, refreshing cache.")
+        item_data.timestamp = time.time()
+        item_data.items = []
+        # Add to the cache
+        for item in tqdm(user.collection_folders[0].releases):
+            item_data.items.append(item)
             cache_count += 1
 
     print(f"Added {cache_count} new items to cache.")
     with open('cache/collection_items.pkl', 'wb') as f:
-        pickle.dump(items, f, protocol=pickle.HIGHEST_PROTOCOL)
-    return items
+        pickle.dump(item_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+    return item_data.items
 
 def collect_release_data(items_list):
     '''
@@ -135,7 +155,6 @@ def df_exporter(df: pd.DataFrame, filename: str):
     '''
     output_folder = settings.get('output_folder', 'output')
     os.makedirs(output_folder, exist_ok=True)
-    print(settings)
     export_types = settings.get('export_types', {})
     if export_types.get('csv', False):
         csv_path = os.path.join(output_folder, f'{filename}.csv')

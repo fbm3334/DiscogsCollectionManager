@@ -3,3 +3,4 @@ output_folder: output
 export_types:
     csv: true
     excel: true
+update_interval_hours: 24
