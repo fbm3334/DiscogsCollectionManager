@@ -114,28 +114,41 @@ def get_item_location(release: dc.CollectionItemInstance):
 
     return loc
 
+def check_name_prefix(name: str) -> bool:
+    '''
+    Check if the artist name contains a prefix like "The", "A", or "An".
+    
+    :param name: Artist name
+    :type name: str
+    :return: True if prefix is found, False otherwise
+    :rtype: bool
+    '''
+    prefixes = ['The ', 'A ', 'An ']
+    return any(name.startswith(prefix) for prefix in prefixes)
+
+
 def fetch_release_data(client, item):
     '''
     Fetch release data from Discogs API.
 
     :param dc: Discogs client object
     :type dc: dc.Client
-    :param release_id: Release ID
-    :type release_id: int
-    :return: Discogs release object
-    :rtype: dc.Release
+    :param item: Discogs collection item
+    :type item: dc.CollectionItemInstance
+    :return: DiscogsReleaseInstance object
+    :rtype: DiscogsReleaseInstance
     '''
     
     release_id = item.id
     release = client.release(release_id)
-    release.refresh()
-    print(release)
-    artist_sort = release.artists_sort
-    #print(artist_sort)
     basic_info = item.data.get('basic_information', None)
-    #print(basic_info)
-    return DiscogsReleaseInstance(id=release_id, release=release, basic_info=basic_info, artists_sort=artist_sort)
-
+    get_first_artist = basic_info.get('artists', [])[0].get('name', '')
+    if check_name_prefix(get_first_artist):
+        artists_sort = release.artists_sort
+    else:
+        artists_sort = get_first_artist
+    
+    return DiscogsReleaseInstance(id=release_id, release=release, basic_info=basic_info, artists_sort=artists_sort)
 
 def get_collection_items(dc, user, force_update=False):
     '''
@@ -170,6 +183,8 @@ def get_collection_items(dc, user, force_update=False):
         return item_data.items
     else:
         print("Update interval has passed or update is forced, refreshing cache.")
+        item_data.items = []
+        cache_count = 0
         item_data.timestamp = time.time()
         
         releases_to_process = user.collection_folders[0].releases
@@ -209,14 +224,12 @@ def create_release_dict(release: DiscogsReleaseInstance):
             'labels': ', '.join(label.get('name', '') for label in basic_data.get('labels', [])),
             'catnos': ', '.join(label.get('catno', '') for label in basic_data.get('labels', [])),
             'url': f'https://www.discogs.com/release/{basic_data.get("id", "")}',
-            'image_url': basic_data.get('cover_image', '')
+            'image_url': basic_data.get('cover_image', ''),
+            'artists_sort': release.artists_sort,
         }
     else:
-        pass
-    # Then add the rest from the release data
-    data.update({
-        'artists_sort': release.artists_sort,
-    })
+        data = {}
+    print(data)
     return data
 
 def collect_release_data(items_list):
@@ -226,11 +239,7 @@ def collect_release_data(items_list):
     release_data_list = []
     for item in items_list:
         # Fetch all release data at once to minimize API calls
-        release = item.release
-        release_data = release.data    # Access the raw data directly if possible
-        
-        # Get notes/location once
-        #location = get_item_location(item)
+
     
         release_data_list.append(create_release_dict(item))
     return pd.DataFrame(release_data_list)
