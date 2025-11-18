@@ -19,22 +19,6 @@ import yaml
 import pandas as pd
 from tqdm import tqdm
 
-import logging
-import sys
-
-# 1. Configure the root logger
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    # Ensure logs print to the console
-    stream=sys.stdout 
-)
-
-# 2. Set the log level for requests components to DEBUG
-# This is what prints the request/response headers
-logging.getLogger('urllib3').setLevel(logging.DEBUG)
-logging.getLogger('http.client').setLevel(logging.DEBUG)
-
 # Constants
 # Client name
 CLIENT_NAME = 'FBM3334Client/0.1'
@@ -62,7 +46,6 @@ class DiscogsReleaseInstance:
     Class to hold Discogs release instance data.
     '''
     id: int
-    release: dc.Release
     basic_info: dict | None = field(default=None)
     artists_sort: str | None = field(default=None)
 
@@ -148,7 +131,7 @@ def fetch_release_data(client, item):
     else:
         artists_sort = get_first_artist
     
-    return DiscogsReleaseInstance(id=release_id, release=release, basic_info=basic_info, artists_sort=artists_sort)
+    return DiscogsReleaseInstance(id=release_id, basic_info=basic_info, artists_sort=artists_sort)
 
 def get_collection_items(dc, user, force_update=False):
     '''
@@ -193,7 +176,6 @@ def get_collection_items(dc, user, force_update=False):
             discogs_release_instance = fetch_release_data(dc, release)
             item_data.items.append(discogs_release_instance)
             cache_count += 1
-
 
     print(f"Added {cache_count} new items to cache.")
     with open('cache/collection_items.pkl', 'wb') as f:
