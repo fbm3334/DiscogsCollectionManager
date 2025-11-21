@@ -113,7 +113,7 @@ def user_collection_update_checker() -> bool:
 def get_discogs_data(dc, user):
     '''
     Fetch all release data from the user's Discogs collection.
-    
+
     :param dc: Discogs client object
     :type dc: dc.Client
     :param user: Discogs user object
@@ -189,6 +189,7 @@ def create_release_dict(release, basic_data):
         'title': basic_data.get('title', ''),
         'release_year': basic_data.get('year', ''),
         'artists': ', '.join(artist.get('name', '') for artist in basic_data.get('artists', [])),
+        'first_artist_id': basic_data.get('artists', [{}])[0].get('id', '') if basic_data.get('artists') else '',
         'genres': ', '.join(basic_data.get('genres', [])),
         'styles': ', '.join(basic_data.get('styles', [])),
         'format': ', '.join(fmt.get('name', '') for fmt in basic_data.get('formats', [])),
@@ -197,11 +198,26 @@ def create_release_dict(release, basic_data):
         'url': f'https://www.discogs.com/release/{basic_data.get("id", "")}',
         'image_url': basic_data.get('cover_image', ''),
         'full_basic_data': basic_data,
-        'full_release_data': release
+        #'full_release_data': release
     }
+    print(data)
     
     return data
 
+def get_unique_artist_ids(df: pd.DataFrame) -> set:
+    '''
+    Get a set of unique artist IDs from the DataFrame.
+
+    :param df: DataFrame containing collection data
+    :type df: pd.DataFrame
+    :return: Set of unique artist IDs
+    :rtype: set
+    '''
+    artist_ids = set()
+    for artist_id in df['first_artist_id'].dropna().unique():
+        if artist_id != '':
+            artist_ids.add(artist_id)
+    return artist_ids
 
 def df_exporter(df: pd.DataFrame, filename: str):
     '''
@@ -244,7 +260,7 @@ def main():
 
     # Get release data
     items_list = create_collection_df(d, user, force_update=force_update)
-    print(items_list)
+    unique_ids = get_unique_artist_ids(items_list)
     # Export DataFrame
     df_exporter(items_list, 'discogs_collection')
 
