@@ -30,6 +30,8 @@ settings = {}
 pat = None
 # Location field (i.e. which custom field stores the location data)
 location_field = None
+# Match dictonary for artist sort
+artist_sort_matches = {}
 
 # Dataclasses
 @dataclass
@@ -39,6 +41,7 @@ class DiscogsPickleCache:
     '''
     timestamp: float
     items: list
+    artist_sort_matches: dict
 
 @dataclass
 class DiscogsReleaseInstance:
@@ -127,7 +130,11 @@ def fetch_release_data(client, item):
     basic_info = item.data.get('basic_information', None)
     get_first_artist = basic_info.get('artists', [])[0].get('name', '')
     if check_name_prefix(get_first_artist):
-        artists_sort = release.artists_sort
+        if get_first_artist in artist_sort_matches:
+            artists_sort = artist_sort_matches[get_first_artist]
+        else:
+            artists_sort = release.artists_sort
+            artist_sort_matches.update({get_first_artist: artists_sort})
     else:
         artists_sort = get_first_artist
     
@@ -146,18 +153,28 @@ def get_collection_items(dc, user, force_update=False):
     :return: List of collection items
     :rtype: list
     '''
-    item_data = DiscogsPickleCache(timestamp=0.0, items=[])
+    item_data = DiscogsPickleCache(timestamp=0.0, items=[], artist_sort_matches={})
     cache_count = 0
-
-    if os.path.exists('cache/collection_items.pkl'):
+    global artist_sort_matches
+    
+    try:
         with open('cache/collection_items.pkl', 'rb') as f:
             item_data = pickle.load(f)
+            artist_sort_matches = item_data.artist_sort_matches
             print(f"Loaded {len(item_data.items)} items from cache.")
             print(f"Cache timestamp: {time.ctime(item_data.timestamp)}")
-    else:
+            exception_found = False
+    except FileNotFoundError:
+        print("No cache found, starting fresh.")
         os.makedirs('cache', exist_ok=True)
+        exception_found = True
+    except AttributeError:
+        exception_found = True
+    if exception_found:
+        print("Cache file is corrupted or incompatible, starting fresh.")
         item_data.timestamp = 0.0
         item_data.items = []
+        artist_sort_matches={}
 
     # Check that the interval has passed first
     update_interval = settings.get('update_interval_hours', 24) * 3600
