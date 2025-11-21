@@ -219,6 +219,34 @@ def get_unique_artist_ids(df: pd.DataFrame) -> set:
             artist_ids.add(artist_id)
     return artist_ids
 
+def get_artist_sort_name(df: pd.DataFrame, artist_id: int, dc_client: dc.Client) -> str:
+    '''
+    Get the artist sort name from Discogs API.
+
+    The Discogs artist object does not have the 'artist_sort' field accessible,
+    but the release does, so we fetch the artist data from the first matching
+    release with that artist ID.
+
+    :param df: DataFrame containing collection data
+    :type df: pd.DataFrame
+    :param artist_id: Discogs artist ID
+    :type artist_id: int
+    :param dc_client: Discogs client object
+    :type dc_client: dc.Client
+    :return: Artist sort name
+    :rtype: str
+    '''
+
+    df_filtered = df[df['first_artist_id'] == artist_id]
+    if df_filtered.empty:
+        return ''
+    first_release_id = df_filtered.iloc[0]['id']
+    release = dc_client.release(first_release_id)
+    release.refresh()
+    return release.data.get('artists_sort', '')
+    
+
+
 def df_exporter(df: pd.DataFrame, filename: str):
     '''
     Export the DataFrame to the supported formats.
@@ -260,7 +288,15 @@ def main():
 
     # Get release data
     items_list = create_collection_df(d, user, force_update=force_update)
-    unique_ids = get_unique_artist_ids(items_list)
+    artist_sort_settings = settings.get('pull_artist_sort_from_discogs', {})
+    artist_sort_enabled = artist_sort_settings.get('enabled', False)
+    if artist_sort_enabled:
+        unique_ids = get_unique_artist_ids(items_list)
+        for id in tqdm(unique_ids, desc="Fetching artist sort names"):
+            sort_name = get_artist_sort_name(items_list, id, d)
+            # Append the sort name to the DataFrame
+            items_list.loc[items_list['first_artist_id'] == id, 'artist_sort_name'] = sort_name
+
     # Export DataFrame
     df_exporter(items_list, 'discogs_collection')
 
