@@ -129,12 +129,13 @@ def fetch_release_data(client, item):
     release = client.release(release_id)
     basic_info = item.data.get('basic_information', None)
     get_first_artist = basic_info.get('artists', [])[0].get('name', '')
+    get_first_artist_id = basic_info.get('artists', [])[0].get('id', '')
     if check_name_prefix(get_first_artist):
-        if get_first_artist in artist_sort_matches:
-            artists_sort = artist_sort_matches[get_first_artist]
+        if get_first_artist_id in artist_sort_matches:
+            artists_sort = artist_sort_matches[get_first_artist_id]
         else:
             artists_sort = release.artists_sort
-            artist_sort_matches.update({get_first_artist: artists_sort})
+            artist_sort_matches.update({get_first_artist_id: artists_sort})
     else:
         artists_sort = get_first_artist
     
@@ -228,7 +229,6 @@ def create_release_dict(release: DiscogsReleaseInstance):
         }
     else:
         data = {}
-    print(data)
     return data
 
 def collect_release_data(items_list):
@@ -285,6 +285,7 @@ def main():
     items_list = get_collection_items(d, user, force_update=force_update)
     d = None  # Free up memory
     df = collect_release_data(items_list)
+    pprint.pprint(artist_sort_matches)
     df_exporter(df, 'discogs_collection_sorted')
 
 if __name__ == '__main__':
