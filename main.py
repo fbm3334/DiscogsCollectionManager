@@ -130,12 +130,19 @@ def fetch_release_data(client, item):
     basic_info = item.data.get('basic_information', None)
     get_first_artist = basic_info.get('artists', [])[0].get('name', '')
     get_first_artist_id = basic_info.get('artists', [])[0].get('id', '')
-    if check_name_prefix(get_first_artist):
+    sort_set = settings.get('pull_artist_sort_from_discogs',  {'enabled': False, 'thorough': False})
+    print(sort_set)
+    sort_get_enabled = sort_set.get('enabled', False)
+    sort_thorough = sort_set.get('thorough', False)
+
+    # If artist sort is to be pulled from Discogs
+    if sort_get_enabled and (sort_thorough or check_name_prefix(get_first_artist)):
         if get_first_artist_id in artist_sort_matches:
             artists_sort = artist_sort_matches[get_first_artist_id]
         else:
             artists_sort = release.artists_sort
             artist_sort_matches.update({get_first_artist_id: artists_sort})
+            
     else:
         artists_sort = get_first_artist
     
@@ -170,6 +177,8 @@ def get_collection_items(dc, user, force_update=False):
         os.makedirs('cache', exist_ok=True)
         exception_found = True
     except AttributeError:
+        exception_found = True
+    except EOFError:
         exception_found = True
     if exception_found:
         print("Cache file is corrupted or incompatible, starting fresh.")
