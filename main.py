@@ -2,13 +2,9 @@
 main.py
 '''
 
-# Python native imports
-import concurrent.futures
 import os
 import pprint
 import pickle
-import re
-import webbrowser
 import time
 from dataclasses import dataclass, field
 import argparse
@@ -32,16 +28,6 @@ pat = None
 location_field = None
 # Match dictonary for artist sort
 artist_sort_matches = {}
-
-# Dataclasses
-@dataclass
-class DiscogsPickleCache:
-    '''
-    Class to handle Discogs pickle cache.
-    '''
-    timestamp: float
-    items: list
-    artist_sort_matches: dict
 
 @dataclass
 class DiscogsReleaseInstance:
@@ -85,35 +71,8 @@ def get_settings_yaml():
         print("settings.yml file not found.")
         exit(1)
 
-def get_item_location(release: dc.CollectionItemInstance):
-    '''
-    Get the location of a release from the user's collection.
-    '''
-    global location_field
-    if location_field is None:
-        raise ValueError("location_field is not set. Please check your settings.yml file.")
-    try:
-        notes = release.notes
-        loc = next((item['value'] for item in notes if item['field_id'] == location_field), '')
-    except TypeError:
-        loc = ''
 
-    return loc
-
-def check_name_prefix(name: str) -> bool:
-    '''
-    Check if the artist name contains a prefix like "The", "A", or "An".
-    
-    :param name: Artist name
-    :type name: str
-    :return: True if prefix is found, False otherwise
-    :rtype: bool
-    '''
-    prefixes = ['The ', 'A ', 'An ']
-    return any(name.startswith(prefix) for prefix in prefixes)
-
-
-def fetch_release_data(client, item):
+def fetch_release_data(client, item) -> dict:
     '''
     Fetch release data from Discogs API.
 
@@ -121,36 +80,63 @@ def fetch_release_data(client, item):
     :type dc: dc.Client
     :param item: Discogs collection item
     :type item: dc.CollectionItemInstance
-    :return: DiscogsReleaseInstance object
-    :rtype: DiscogsReleaseInstance
+    :return: Dictionary with release ID as key and list of release object and basic info as value
+    :rtype: dict
     '''
-    
     release_id = item.id
     release = client.release(release_id)
     basic_info = item.data.get('basic_information', None)
-    get_first_artist = basic_info.get('artists', [])[0].get('name', '')
-    get_first_artist_id = basic_info.get('artists', [])[0].get('id', '')
-    sort_set = settings.get('pull_artist_sort_from_discogs',  {'enabled': False, 'thorough': False})
-    print(sort_set)
-    sort_get_enabled = sort_set.get('enabled', False)
-    sort_thorough = sort_set.get('thorough', False)
-
-    # If artist sort is to be pulled from Discogs
-    if sort_get_enabled and (sort_thorough or check_name_prefix(get_first_artist)):
-        if get_first_artist_id in artist_sort_matches:
-            artists_sort = artist_sort_matches[get_first_artist_id]
-        else:
-            artists_sort = release.artists_sort
-            artist_sort_matches.update({get_first_artist_id: artists_sort})
-            
-    else:
-        artists_sort = get_first_artist
     
-    return DiscogsReleaseInstance(id=release_id, basic_info=basic_info, artists_sort=artists_sort)
+    return {release_id: [release, basic_info]}
 
-def get_collection_items(dc, user, force_update=False):
+def user_collection_update_checker() -> bool:
     '''
-    Get all items in the user's Discogs collection.
+    Checks whether the user's collection has been updated since the last cache.
+    '''
+    # Load cached data
+    cache_filepath = os.path.join(
+        settings.get('cache_folder', 'cache'),
+        settings.get('collection_cache_file', 'collection.json')
+    )
+    if not os.path.exists(cache_filepath):
+        return True  # No cache exists, so we need to update
+    cache_mtime = os.path.getmtime(cache_filepath)
+    # Here we would ideally check the user's collection last updated timestamp
+    # However, Discogs API does not provide a direct way to get this information
+    # So we will assume that if the cache is older than the value set in
+    # settings, we should update.
+    update_interval = settings.get('update_interval_hours', 24) * 3600
+    if (time.time() - cache_mtime) > update_interval:
+        return True
+    return False
+
+def get_discogs_data(dc, user):
+    '''
+    Fetch all release data from the user's Discogs collection.
+    
+    :param dc: Discogs client object
+    :type dc: dc.Client
+    :param user: Discogs user object
+    :type user: dc.User
+    :return: Dictionary with release ID as key and list of release object and basic info
+    :rtype: dict
+    '''
+
+    release_data_dict = {}
+
+    releases_to_process = user.collection_folders[0].releases
+        
+    for release in tqdm(releases_to_process, desc="Fetching release data"):
+        discogs_release_instance = fetch_release_data(dc, release)
+        release_data_dict.update(discogs_release_instance)
+
+    return release_data_dict
+
+    
+
+def create_collection_df(dc, user, force_update=False) -> pd.DataFrame:
+    '''
+    Create a DataFrame of the user's Discogs collection.
 
     :param dc: Discogs client object
     :type dc: dc.Client
@@ -158,58 +144,37 @@ def get_collection_items(dc, user, force_update=False):
     :type user: dc.User
     :param force_update: Whether to force update the cache
     :type force_update: bool
-    :return: List of collection items
-    :rtype: list
+    :return: DataFrame of collection data
+    :rtype: pd.DataFrame
     '''
-    item_data = DiscogsPickleCache(timestamp=0.0, items=[], artist_sort_matches={})
-    cache_count = 0
-    global artist_sort_matches
+
+    # Get the collection dataframe from the cache
+    collection_filepath = os.path.join(
+        settings.get('cache_folder', 'cache'),
+        settings.get('collection_cache_file', 'collection.json')
+    )
     
-    try:
-        with open('cache/collection_items.pkl', 'rb') as f:
-            item_data = pickle.load(f)
-            artist_sort_matches = item_data.artist_sort_matches
-            print(f"Loaded {len(item_data.items)} items from cache.")
-            print(f"Cache timestamp: {time.ctime(item_data.timestamp)}")
-            exception_found = False
-    except FileNotFoundError:
-        print("No cache found, starting fresh.")
-        os.makedirs('cache', exist_ok=True)
-        exception_found = True
-    except AttributeError:
-        exception_found = True
-    except EOFError:
-        exception_found = True
-    if exception_found:
-        print("Cache file is corrupted or incompatible, starting fresh.")
-        item_data.timestamp = 0.0
-        item_data.items = []
-        artist_sort_matches={}
-
-    # Check that the interval has passed first
-    update_interval = settings.get('update_interval_hours', 24) * 3600
-    if ((time.time() - item_data.timestamp < update_interval) or not settings.get('auto_update', True)) and force_update is False:
-        print("Using cached data as update interval has not passed or auto updates are disabled.")
-        return item_data.items
+    # Check if the DataFrame needs to be updated
+    if user_collection_update_checker() or force_update:
+        print("Collection has been updated or force update is set, refreshing data.")
+        df_list = []
+        dict_data = get_discogs_data(dc, user)
+        for key, value in dict_data.items():
+            release = value[0]
+            basic_data = value[1]
+            df_list.append(create_release_dict(release, basic_data))
+        df = pd.DataFrame(df_list)
+        # Save to cache
+        os.makedirs(os.path.dirname(collection_filepath), exist_ok=True)
+        df.to_json(collection_filepath, orient='records', lines=False)
+        return df
+            
     else:
-        print("Update interval has passed or update is forced, refreshing cache.")
-        item_data.items = []
-        cache_count = 0
-        item_data.timestamp = time.time()
-        
-        releases_to_process = user.collection_folders[0].releases
-        
-        for release in tqdm(releases_to_process, desc="Fetching release data"):
-            discogs_release_instance = fetch_release_data(dc, release)
-            item_data.items.append(discogs_release_instance)
-            cache_count += 1
+        print("Using cached collection data.")
+        df = pd.read_json(collection_filepath)
+        return df
 
-    print(f"Added {cache_count} new items to cache.")
-    with open('cache/collection_items.pkl', 'wb') as f:
-        pickle.dump(item_data, f, protocol=pickle.HIGHEST_PROTOCOL)
-    return item_data.items
-
-def create_release_dict(release: DiscogsReleaseInstance):
+def create_release_dict(release, basic_data):
     '''
     Create a dictionary of release data from a DiscogsReleaseInstance.
 
@@ -218,39 +183,25 @@ def create_release_dict(release: DiscogsReleaseInstance):
     :return: Dictionary of release data
     :rtype: dict
     '''
-    basic_data = release.basic_info
-    # Try to pull from basic info first
-    if basic_data:
-        data = {
-            'id': basic_data.get('id', ''),
-            'master_id': basic_data.get('master_id', ''),
-            'title': basic_data.get('title', ''),
-            'release_year': basic_data.get('year', ''),
-            'artists': ', '.join(artist.get('name', '') for artist in basic_data.get('artists', [])),
-            'genres': ', '.join(basic_data.get('genres', [])),
-            'styles': ', '.join(basic_data.get('styles', [])),
-            'format': ', '.join(fmt.get('name', '') for fmt in basic_data.get('formats', [])),
-            'labels': ', '.join(label.get('name', '') for label in basic_data.get('labels', [])),
-            'catnos': ', '.join(label.get('catno', '') for label in basic_data.get('labels', [])),
-            'url': f'https://www.discogs.com/release/{basic_data.get("id", "")}',
-            'image_url': basic_data.get('cover_image', ''),
-            'artists_sort': release.artists_sort,
-        }
-    else:
-        data = {}
+    data = {
+        'id': basic_data.get('id', ''),
+        'master_id': basic_data.get('master_id', ''),
+        'title': basic_data.get('title', ''),
+        'release_year': basic_data.get('year', ''),
+        'artists': ', '.join(artist.get('name', '') for artist in basic_data.get('artists', [])),
+        'genres': ', '.join(basic_data.get('genres', [])),
+        'styles': ', '.join(basic_data.get('styles', [])),
+        'format': ', '.join(fmt.get('name', '') for fmt in basic_data.get('formats', [])),
+        'labels': ', '.join(label.get('name', '') for label in basic_data.get('labels', [])),
+        'catnos': ', '.join(label.get('catno', '') for label in basic_data.get('labels', [])),
+        'url': f'https://www.discogs.com/release/{basic_data.get("id", "")}',
+        'image_url': basic_data.get('cover_image', ''),
+        'full_basic_data': basic_data,
+        'full_release_data': release
+    }
+    
     return data
 
-def collect_release_data(items_list):
-    '''
-    Collect release data from the user's Discogs collection.
-    '''
-    release_data_list = []
-    for item in items_list:
-        # Fetch all release data at once to minimize API calls
-
-    
-        release_data_list.append(create_release_dict(item))
-    return pd.DataFrame(release_data_list)
 
 def df_exporter(df: pd.DataFrame, filename: str):
     '''
@@ -261,6 +212,7 @@ def df_exporter(df: pd.DataFrame, filename: str):
     :param filename: Base filename for the exported files
     :type filename: str
     '''
+    df = df.drop(columns=['full_basic_data', 'full_release_data'], errors='ignore')
     output_folder = settings.get('output_folder', 'output')
     os.makedirs(output_folder, exist_ok=True)
     export_types = settings.get('export_types', {})
@@ -291,11 +243,10 @@ def main():
     user = d.identity()
 
     # Get release data
-    items_list = get_collection_items(d, user, force_update=force_update)
-    d = None  # Free up memory
-    df = collect_release_data(items_list)
-    pprint.pprint(artist_sort_matches)
-    df_exporter(df, 'discogs_collection_sorted')
+    items_list = create_collection_df(d, user, force_update=force_update)
+    print(items_list)
+    # Export DataFrame
+    df_exporter(items_list, 'discogs_collection')
 
 if __name__ == '__main__':
     main()

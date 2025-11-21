@@ -1,7 +1,7 @@
 location_field: 4
 output_folder: output
 cache_folder: cache
-collection_file: collection.json
+collection_cache_file: collection.json
 export_types:
     csv: true
     excel: true
