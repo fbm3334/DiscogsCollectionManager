@@ -389,8 +389,9 @@ def main():
     
     # Sort the DataFrame by artist sort name and then title
     if 'artist_sort_name' in items_list.columns:
-        items_list = items_list.sort_values(by=['artist_sort_name', 'title'], ascending=[True, True])
-
+        items_list = items_list.sort_values(by=['artist_sort_name', 'release_year'], ascending=[True, True])
+    else:
+        items_list = items_list.sort_values(by=['artists', 'release_year'], ascending=[True, True])
 
     # Export DataFrame
     df_exporter(items_list, 'discogs_collection')
