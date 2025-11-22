@@ -203,7 +203,6 @@ def create_release_dict(release, basic_data):
         'full_basic_data': basic_data,
         #'full_release_data': release
     }
-    print(data)
     
     return data
 
