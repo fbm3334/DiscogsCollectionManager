@@ -281,7 +281,7 @@ def artist_sort_name_fetcher(cache_filepath: str, items_list: pd.DataFrame, d: d
     if 'artist_sort_name' not in items_list.columns:
         items_list['artist_sort_name'] = ''
 
-    # Load existing artist sort dictionary (keys normalized to strings)
+    # Load existing artist sort dictionary (keys normalised to strings)
     if os.path.exists(cache_filepath):
         with open(cache_filepath, 'r') as f:
             sort_dict = json.load(f)
@@ -321,11 +321,11 @@ def artist_sort_name_fetcher(cache_filepath: str, items_list: pd.DataFrame, d: d
                 items_list.loc[items_list['first_artist_id'].astype(str) == str(aid), 'artist_sort_name'] = artist_name
                 continue
 
-    # Otherwise fetch the sort name from Discogs
-    sort_name = get_artist_sort_name(items_list, aid, d)
-    sort_dict[str(aid)] = sort_name
-    # Append the sort name to the DataFrame (string compare)
-    items_list.loc[items_list['first_artist_id'].astype(str) == str(aid), 'artist_sort_name'] = sort_name
+        # Otherwise fetch the sort name from Discogs
+        sort_name = get_artist_sort_name(items_list, aid, d)
+        sort_dict[str(aid)] = sort_name
+        # Append the sort name to the DataFrame (string compare)
+        items_list.loc[items_list['first_artist_id'].astype(str) == str(aid), 'artist_sort_name'] = sort_name
 
     # Save the updated sort dictionary to cache (keys as strings)
     with open(cache_filepath, 'w') as f:
@@ -387,6 +387,10 @@ def main():
     if artist_sort_enabled:
         items_list = artist_sort_name_fetcher(artist_sort_dict_path, items_list, d, thorough=thorough_check)
     
+    # Sort the DataFrame by artist sort name and then title
+    if 'artist_sort_name' in items_list.columns:
+        items_list = items_list.sort_values(by=['artist_sort_name', 'title'], ascending=[True, True])
+
 
     # Export DataFrame
     df_exporter(items_list, 'discogs_collection')
