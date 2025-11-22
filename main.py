@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass, field
 import argparse
 import json
+import re
 
 # Third-party imports
 import discogs_client as dc
@@ -245,8 +246,20 @@ def get_artist_sort_name(df: pd.DataFrame, artist_id: int, dc_client: dc.Client)
     release = dc_client.release(first_release_id)
     release.refresh()
     return release.data.get('artists_sort', '')
+
+def artist_prefix_searcher(artist_name: str) -> bool:
+    '''
+    Check if the artist name starts with a common prefix like "The", "A", or "An".
+
+    :param artist_name: Name of the artist
+    :type artist_name: str
+    :return: True if the name starts with a prefix, False otherwise
+    :rtype: bool
+    '''
+    REGEX_STRING = r'^\s*(?:the|a|el|la|los|las|un|una|le|la|les|un|une|il|lo|la|gli|le|ein|eine)\s+'
+    return re.match(REGEX_STRING, artist_name, re.IGNORECASE) is not None
     
-def artist_sort_name_fetcher(cache_filepath: str, items_list: pd.DataFrame, d: dc.Client) -> pd.DataFrame:
+def artist_sort_name_fetcher(cache_filepath: str, items_list: pd.DataFrame, d: dc.Client, thorough: bool = False) -> pd.DataFrame:
     '''
     Fetch artist sort names and update the DataFrame.
     
@@ -256,11 +269,11 @@ def artist_sort_name_fetcher(cache_filepath: str, items_list: pd.DataFrame, d: d
     :type items_list: pd.DataFrame
     :param d: Discogs client object
     :type d: dc.Client
+    :param thorough: Whether to perform a thorough check
+    :type thorough: bool
     :return: Updated DataFrame with artist sort names
     :rtype: pd.DataFrame
     '''
-    
-
     # Check that the file exists, and if so, load the artist sort dictionary
     if os.path.exists(cache_filepath):
         with open(cache_filepath, 'r') as f:
@@ -276,6 +289,18 @@ def artist_sort_name_fetcher(cache_filepath: str, items_list: pd.DataFrame, d: d
     
     # Get the missing IDs and update the sort dictionary
     for id in tqdm(ids_not_in_sort_dict, desc="Fetching artist sort names"):
+        print(thorough)
+        # If thorough checking is disabled, skip artists whose names start with common prefixes
+        if not thorough:
+            # For each unique ID, get the artist name
+            artist_name = items_list.loc[items_list['first_artist_id'] == id, 'artists'].values[0]
+            # If the artist name does not start with the prefix, then append the existing name as the sort name
+            if not artist_prefix_searcher(artist_name):
+                sort_dict[id] = artist_name
+                # Append the sort name to the DataFrame
+                items_list.loc[items_list['first_artist_id'] == id, 'artist_sort_name'] = artist_name
+                continue
+        
         sort_name = get_artist_sort_name(items_list, id, d)
         sort_dict[id] = sort_name
         # Append the sort name to the DataFrame
@@ -335,13 +360,14 @@ def main():
     artist_sort_settings = settings.get('pull_artist_sort_from_discogs', {})
     artist_sort_enabled = artist_sort_settings.get('enabled', False)
     artist_sort_dict_file = artist_sort_settings.get('cache_file', 'artist_sort_cache.json')
+    thorough_check = artist_sort_settings.get('thorough', False)
     artist_sort_dict_path = os.path.join(
         settings.get('cache_folder', 'cache'),
         artist_sort_dict_file
     )
-    # If artist sorting
+    # If artist sorting data is pulled from Discogs
     if artist_sort_enabled:
-        items_list = artist_sort_name_fetcher(artist_sort_dict_path, items_list, d)
+        items_list = artist_sort_name_fetcher(artist_sort_dict_path, items_list, d, thorough=thorough_check)
     
 
     # Export DataFrame
