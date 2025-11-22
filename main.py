@@ -191,12 +191,13 @@ def create_release_dict(release, basic_data):
         'title': basic_data.get('title', ''),
         'release_year': basic_data.get('year', ''),
         'artists': ', '.join(artist.get('name', '') for artist in basic_data.get('artists', [])),
+        'artist_list': [artist.get('name', '') for artist in basic_data.get('artists', [])],
         'first_artist_id': basic_data.get('artists', [{}])[0].get('id', '') if basic_data.get('artists') else '',
-        'genres': ', '.join(basic_data.get('genres', [])),
-        'styles': ', '.join(basic_data.get('styles', [])),
-        'format': ', '.join(fmt.get('name', '') for fmt in basic_data.get('formats', [])),
-        'labels': ', '.join(label.get('name', '') for label in basic_data.get('labels', [])),
-        'catnos': ', '.join(label.get('catno', '') for label in basic_data.get('labels', [])),
+        'genre_list': basic_data.get('genres', []),
+        'style_list': basic_data.get('styles', []),
+        'format_list': [fmt.get('name', '') for fmt in basic_data.get('formats', [])],
+        'label_list': [label.get('name', '') for label in basic_data.get('labels', [])],
+        'catno_list': [label.get('catno', '') for label in basic_data.get('labels', [])],
         'url': f'https://www.discogs.com/release/{basic_data.get("id", "")}',
         'image_url': basic_data.get('cover_image', ''),
         'full_basic_data': basic_data,
@@ -343,6 +344,13 @@ def df_exporter(df: pd.DataFrame, filename: str):
     :type filename: str
     '''
     df = df.drop(columns=['full_basic_data', 'full_release_data'], errors='ignore')
+    # If the column contains _list, join the list into a string and make a new
+    # column without the _list suffix
+    for col in df.columns:
+        if col.endswith('_list'):
+            new_col = col[:-5]  # Remove '_list' suffix
+            df[new_col] = df[col].apply(lambda x: ', '.join(x) if isinstance(x, list) else '')
+            df.drop(columns=[col], inplace=True)
     output_folder = settings.get('output_folder', 'output')
     os.makedirs(output_folder, exist_ok=True)
     export_types = settings.get('export_types', {})
