@@ -9,6 +9,6 @@ class DownloadProgressBar(tqdm):
 
 manager = DiscogsManager()
 
-manager.clear_caches()
-coll = manager.fetch_collection(force_update=True)
+coll = manager.fetch_collection(force_update=True, progress_callback=DownloadProgressBar().update_to)
+manager.fetch_artist_sort_names()
 print(coll)
