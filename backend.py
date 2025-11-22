@@ -175,7 +175,7 @@ class DiscogsManager:
             'url': f'https://www.discogs.com/release/{basic_info.get("id", "")}',
             'image_url': basic_info.get('cover_image', ''),
             'full_basic_info': basic_info,
-            'full_release_data': release
+            #'full_release_data': release
         }
         return data
     
@@ -222,6 +222,7 @@ class DiscogsManager:
 
         self.df = pd.DataFrame(data_list)
         # Save to cache
+        print("Saving data to cache.")
         os.makedirs(os.path.dirname(cache_filepath), exist_ok=True)
         self.df.to_json(cache_filepath, orient='records', lines=False)
         return self.df
