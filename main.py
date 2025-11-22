@@ -8,6 +8,7 @@ import pickle
 import time
 from dataclasses import dataclass, field
 import argparse
+import json
 
 # Third-party imports
 import discogs_client as dc
@@ -245,7 +246,49 @@ def get_artist_sort_name(df: pd.DataFrame, artist_id: int, dc_client: dc.Client)
     release.refresh()
     return release.data.get('artists_sort', '')
     
+def artist_sort_name_fetcher(cache_filepath: str, items_list: pd.DataFrame, d: dc.Client) -> pd.DataFrame:
+    '''
+    Fetch artist sort names and update the DataFrame.
+    
+    :param cache_filepath: Path to the cache file for artist sort names
+    :type cache_filepath: str
+    :param items_list: DataFrame containing collection data
+    :type items_list: pd.DataFrame
+    :param d: Discogs client object
+    :type d: dc.Client
+    :return: Updated DataFrame with artist sort names
+    :rtype: pd.DataFrame
+    '''
+    
 
+    # Check that the file exists, and if so, load the artist sort dictionary
+    if os.path.exists(cache_filepath):
+        with open(cache_filepath, 'r') as f:
+            sort_dict = json.load(f)
+    else:
+        sort_dict = {}
+    
+    # Get the unique artist IDs from the DataFrame
+    unique_ids = get_unique_artist_ids(items_list)
+
+    # Get the list of IDs not already in the sort dictionary
+    ids_not_in_sort_dict = [id for id in unique_ids if str(id) not in sort_dict]
+    
+    # Get the missing IDs and update the sort dictionary
+    for id in tqdm(ids_not_in_sort_dict, desc="Fetching artist sort names"):
+        sort_name = get_artist_sort_name(items_list, id, d)
+        sort_dict[id] = sort_name
+        # Append the sort name to the DataFrame
+        items_list.loc[items_list['first_artist_id'] == id, 'artist_sort_name'] = sort_name
+    
+    # Convert the sort dictionary keys to standard int for JSON serializsation
+    sort_dict = {int(k): v for k, v in sort_dict.items()}
+
+    # Save the updated sort dictionary to cache
+    with open(cache_filepath, 'w') as f:
+        json.dump(sort_dict, f)
+
+    return items_list
 
 def df_exporter(df: pd.DataFrame, filename: str):
     '''
@@ -288,14 +331,18 @@ def main():
 
     # Get release data
     items_list = create_collection_df(d, user, force_update=force_update)
+    
     artist_sort_settings = settings.get('pull_artist_sort_from_discogs', {})
     artist_sort_enabled = artist_sort_settings.get('enabled', False)
+    artist_sort_dict_file = artist_sort_settings.get('cache_file', 'artist_sort_cache.json')
+    artist_sort_dict_path = os.path.join(
+        settings.get('cache_folder', 'cache'),
+        artist_sort_dict_file
+    )
+    # If artist sorting
     if artist_sort_enabled:
-        unique_ids = get_unique_artist_ids(items_list)
-        for id in tqdm(unique_ids, desc="Fetching artist sort names"):
-            sort_name = get_artist_sort_name(items_list, id, d)
-            # Append the sort name to the DataFrame
-            items_list.loc[items_list['first_artist_id'] == id, 'artist_sort_name'] = sort_name
+        items_list = artist_sort_name_fetcher(artist_sort_dict_path, items_list, d)
+    
 
     # Export DataFrame
     df_exporter(items_list, 'discogs_collection')
