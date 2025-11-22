@@ -274,44 +274,62 @@ def artist_sort_name_fetcher(cache_filepath: str, items_list: pd.DataFrame, d: d
     :return: Updated DataFrame with artist sort names
     :rtype: pd.DataFrame
     '''
-    # Check that the file exists, and if so, load the artist sort dictionary
+    # Work on a copy to avoid unexpected chained-assignment issues
+    items_list = items_list.copy()
+
+    # Ensure the artist_sort_name column always exists so exports include it
+    if 'artist_sort_name' not in items_list.columns:
+        items_list['artist_sort_name'] = ''
+
+    # Load existing artist sort dictionary (keys normalized to strings)
     if os.path.exists(cache_filepath):
         with open(cache_filepath, 'r') as f:
             sort_dict = json.load(f)
+            # normalize existing keys to strings
+            sort_dict = {str(k): v for k, v in sort_dict.items()}
     else:
         sort_dict = {}
-    
+
+    # Pre-fill the DataFrame with any cached sort names so the column exists
+    if sort_dict:
+        for k, v in sort_dict.items():
+            try:
+                aid = str(k)
+            except Exception:
+                continue
+            # Use string comparisons to avoid int/float/string dtype mismatches
+            items_list.loc[items_list['first_artist_id'].astype(str) == aid, 'artist_sort_name'] = v
+
     # Get the unique artist IDs from the DataFrame
     unique_ids = get_unique_artist_ids(items_list)
 
     # Get the list of IDs not already in the sort dictionary
-    ids_not_in_sort_dict = [id for id in unique_ids if str(id) not in sort_dict]
-    
+    ids_not_in_sort_dict = [aid for aid in unique_ids if str(aid) not in sort_dict]
+
     # Get the missing IDs and update the sort dictionary
-    for id in tqdm(ids_not_in_sort_dict, desc="Fetching artist sort names"):
-        print(thorough)
+    for aid in tqdm(ids_not_in_sort_dict, desc="Fetching artist sort names"):
         # If thorough checking is disabled, skip artists whose names start with common prefixes
         if not thorough:
-            # For each unique ID, get the artist name
-            artist_name = items_list.loc[items_list['first_artist_id'] == id, 'artists'].values[0]
-            # If the artist name does not start with the prefix, then append the existing name as the sort name
-            if not artist_prefix_searcher(artist_name):
-                sort_dict[id] = artist_name
-                # Append the sort name to the DataFrame
-                items_list.loc[items_list['first_artist_id'] == id, 'artist_sort_name'] = artist_name
+            # For each unique ID, get the artist name (first match)
+            # Use string comparison to be robust against dtype differences
+            series = items_list.loc[items_list['first_artist_id'].astype(str) == str(aid), 'artists']
+            artist_name = series.iloc[0] if not series.empty else ''
+            # If the artist name does not start with the prefix, then use the existing name as the sort name
+            if artist_name and not artist_prefix_searcher(artist_name):
+                sort_dict[str(aid)] = artist_name
+                # Append the sort name to the DataFrame (string compare)
+                items_list.loc[items_list['first_artist_id'].astype(str) == str(aid), 'artist_sort_name'] = artist_name
                 continue
-        
-        sort_name = get_artist_sort_name(items_list, id, d)
-        sort_dict[id] = sort_name
-        # Append the sort name to the DataFrame
-        items_list.loc[items_list['first_artist_id'] == id, 'artist_sort_name'] = sort_name
-    
-    # Convert the sort dictionary keys to standard int for JSON serializsation
-    sort_dict = {int(k): v for k, v in sort_dict.items()}
 
-    # Save the updated sort dictionary to cache
+    # Otherwise fetch the sort name from Discogs
+    sort_name = get_artist_sort_name(items_list, aid, d)
+    sort_dict[str(aid)] = sort_name
+    # Append the sort name to the DataFrame (string compare)
+    items_list.loc[items_list['first_artist_id'].astype(str) == str(aid), 'artist_sort_name'] = sort_name
+
+    # Save the updated sort dictionary to cache (keys as strings)
     with open(cache_filepath, 'w') as f:
-        json.dump(sort_dict, f)
+        json.dump(sort_dict, f, ensure_ascii=False, indent=2)
 
     return items_list
 

@@ -9,5 +9,5 @@ auto_update: true
 update_interval_hours: 24
 pull_artist_sort_from_discogs:
     enabled: true
-    thorough: true
+    thorough: false
     cache_file: artist_sort_cache.json
