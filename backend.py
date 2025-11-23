@@ -524,11 +524,12 @@ class DiscogsManager:
         
         query = f'''
         SELECT 
-            r.id, r.title, r.year, r.thumb_url, 
-            -- Use MAX/Group Concat to grab a representative artist/label if multiple exist due to the join
-            GROUP_CONCAT(DISTINCT a.name) as artist_name,
-            GROUP_CONCAT(DISTINCT l.name) as label_name,
-            rl.catno
+            r.id,
+            REPLACE(GROUP_CONCAT(DISTINCT a.name), ',', ', ') as artist_name,
+            r.title, 
+            
+            REPLACE(GROUP_CONCAT(DISTINCT l.name), ',', ', ') as label_name,
+            rl.catno, r.year, r.thumb_url, r.release_url
         FROM releases r
         LEFT JOIN release_artists ra ON r.id = ra.release_id
         LEFT JOIN artists a ON ra.artist_id = a.id
