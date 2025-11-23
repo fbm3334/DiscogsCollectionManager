@@ -481,52 +481,85 @@ class DiscogsManager:
             os.remove(db_path)
             print("Database cleared.")
 
-    def get_releases_paginated(self, page: int = 0, page_size: int = 10, sort_by: str = 'date_added', desc: bool = True):
+    def get_releases_paginated(self, page: int = 0, page_size: int = 10, sort_by: str = 'date_added', desc: bool = True, search_query: str = None):
         '''
-        Efficiently fetches a slice of data using SQL LIMIT and OFFSET.
-
-        :param page: Page number (0-indexed)
-        :type page: int
-        :param page_size: Number of items per page
-        :type page_size: int
-        :param sort_by: Column to sort by
-        :type sort_by: str
-        :param desc: Whether to sort in descending order
-        :type desc: bool
-        :return: List of release dicts and total row count
-        :rtype: (list, int)
+        Fetches data with support for Search, Sorting, and Pagination.
         '''
         offset = page * page_size
         order_dir = 'DESC' if desc else 'ASC'
         
-        # Sanitise sort_by to prevent SQL injection (basic check)
-        allowed_sorts = ['title', 'year', 'date_added', 'id']
+        # 1. Safe Sort Column Selection
+        allowed_sorts = ['title', 'year', 'date_added', 'id', 'artist']
         if sort_by not in allowed_sorts: sort_by = 'date_added'
 
+        if sort_by == 'artist':
+            order_clause = f"COALESCE(a.sort_name, a.name) COLLATE NOCASE {order_dir}"
+        else:
+            order_clause = f"r.{sort_by} {order_dir}"
+
+        # 2. Construct the WHERE clause dynamically
+        where_sql = ""
+        search_params = []
+        
+        if search_query:
+            # We verify title, artist name, label name, year, and catalog number
+            where_sql = '''
+            WHERE (
+                r.title LIKE ? OR
+                r.year LIKE ? OR
+                a.name LIKE ? OR
+                l.name LIKE ? OR
+                rl.catno LIKE ?
+            )
+            '''
+            # We need to pass the search term for EACH '?' placeholder
+            term = f"%{search_query}%"
+            search_params = [term, term, term, term, term]
+
+        # 3. Main Query
+        # Note: We removed "ra.is_primary = 1" from the JOIN for the search context 
+        # so we can find releases even if the searched artist is a "feat." or remixer.
+        # However, for display consistency in the SELECT, we might still prefer the primary.
+        # For a generic search, checking ALL joined artists is better.
+        
         query = f'''
         SELECT 
             r.id, r.title, r.year, r.thumb_url, 
-            a.name as artist_name, l.name as label_name
+            -- Use MAX/Group Concat to grab a representative artist/label if multiple exist due to the join
+            GROUP_CONCAT(DISTINCT a.name) as artist_name,
+            GROUP_CONCAT(DISTINCT l.name) as label_name,
+            rl.catno
         FROM releases r
-        -- Join first artist only for display efficiency
-        LEFT JOIN release_artists ra ON r.id = ra.release_id AND ra.is_primary = 1
+        LEFT JOIN release_artists ra ON r.id = ra.release_id
         LEFT JOIN artists a ON ra.artist_id = a.id
-        -- Join first label only
         LEFT JOIN release_labels rl ON r.id = rl.release_id
         LEFT JOIN labels l ON rl.label_id = l.id
+        {where_sql}
         GROUP BY r.id
-        ORDER BY r.{sort_by} {order_dir}
+        ORDER BY {order_clause}
         LIMIT ? OFFSET ?
         '''
         
-        count_query = "SELECT COUNT(*) FROM releases"
+        # 4. Count Query (Must also respect the search filter!)
+        count_query = f'''
+        SELECT COUNT(DISTINCT r.id) 
+        FROM releases r
+        LEFT JOIN release_artists ra ON r.id = ra.release_id
+        LEFT JOIN artists a ON ra.artist_id = a.id
+        LEFT JOIN release_labels rl ON r.id = rl.release_id
+        LEFT JOIN labels l ON rl.label_id = l.id
+        {where_sql}
+        '''
 
         with self.get_db_connection() as conn:
-            # Get total count for the UI pagination component
-            total_rows = conn.execute(count_query).fetchone()[0]
+            # Execute Count
+            # search_params is passed here to filter the count correctly
+            total_rows = conn.execute(count_query, search_params).fetchone()[0]
             
-            # Get specific page
-            cursor = conn.execute(query, (page_size, offset))
+            # Execute Data Fetch
+            # Combine search_params with pagination params (limit, offset)
+            full_params = search_params + [page_size, offset]
+            cursor = conn.execute(query, full_params)
             rows = [dict(row) for row in cursor.fetchall()]
             
         return rows, total_rows
