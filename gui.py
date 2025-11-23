@@ -8,6 +8,7 @@ INITIAL_PAGE_SIZE = 20
 INITIAL_PAGE = 0
 
 releases, num_releases = manager.get_releases_paginated(page=0, page_size=20, sort_by='artist', desc=False)
+# Table code inspired by https://github.com/zauberzeug/nicegui/discussions/1903#discussioncomment-8251437
 
 table_data = {
     'rows': releases,
