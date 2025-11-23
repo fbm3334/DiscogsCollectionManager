@@ -28,7 +28,6 @@ def paginated_table():
         {'name': 'label_name', 'label': 'Label', 'field': 'label_name', 'sortable': False},
         {'name': 'catno', 'label': 'Cat No', 'field': 'catno', 'sortable': False},
         {'name': 'year', 'label': 'Year', 'field': 'year', 'sortable': False},
-        {'name': 'thumb_url', 'label': 'Thumbnail', 'field': 'thumb_url', 'sortable': False},
         {'name': 'release_url', 'label': 'Release URL', 'field': 'release_url', 'sortable': False},
     ]
     table = ui.table(
@@ -36,7 +35,9 @@ def paginated_table():
         title='Discogs Collection',
         columns=columns,
         pagination=table_data['pagination'],
-    )
+    )   
+    table.classes('w-full max-h-screen-75 overflow-auto')
+    table.columns[6]['type'] = 'image'  # Set thumbnail column to image type
     table.on('request', do_pagination)
 
 def get_full_count():

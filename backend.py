@@ -529,7 +529,7 @@ class DiscogsManager:
             r.title, 
             
             REPLACE(GROUP_CONCAT(DISTINCT l.name), ',', ', ') as label_name,
-            rl.catno, r.year, r.thumb_url, r.release_url
+            rl.catno, r.year, r.release_url
         FROM releases r
         LEFT JOIN release_artists ra ON r.id = ra.release_id
         LEFT JOIN artists a ON ra.artist_id = a.id
