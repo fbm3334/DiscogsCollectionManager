@@ -559,6 +559,11 @@ class DiscogsManager:
             
             # Execute Data Fetch
             # Combine search_params with pagination params (limit, offset)
+            # If page_size is 0 (fetch all), we handle that case
+            if page_size == 0:
+                page_size = total_rows
+                offset = 0
+            
             full_params = search_params + [page_size, offset]
             cursor = conn.execute(query, full_params)
             rows = [dict(row) for row in cursor.fetchall()]
