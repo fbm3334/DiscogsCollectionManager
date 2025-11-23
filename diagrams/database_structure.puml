@@ -1,0 +1,88 @@
+@startuml
+
+' STRUCTURE AND STYLING
+hide circle
+skinparam linetype ortho
+
+' MAIN TABLES
+entity "releases" as releases {
+  *id : INTEGER <<PK>>
+  --
+  master_id : INTEGER
+  title : TEXT
+  year : TEXT
+  thumb_url : TEXT
+  release_url : TEXT
+  date_added : TIMESTAMP
+}
+
+entity "artists" as artists {
+  *id : INTEGER <<PK>>
+  --
+  name : TEXT
+  sort_name : TEXT
+}
+
+entity "genres" as genres {
+  *id : INTEGER <<PK>>
+  --
+  name : TEXT
+}
+
+entity "styles" as styles {
+  *id : INTEGER <<PK>>
+  --
+  name : TEXT
+}
+
+entity "labels" as labels {
+  *id : INTEGER <<PK>>
+  --
+  name : TEXT
+}
+
+' JUNCTION TABLES
+
+entity "release_artists" as release_artists {
+  *release_id : INTEGER <<FK>>
+  *artist_id : INTEGER <<FK>>
+  --
+  is_primary : BOOLEAN
+}
+
+entity "release_genres" as release_genres {
+  *release_id : INTEGER <<FK>>
+  *genre_id : INTEGER <<FK>>
+}
+
+entity "release_styles" as release_styles {
+  *release_id : INTEGER <<FK>>
+  *style_id : INTEGER <<FK>>
+}
+
+entity "release_labels" as release_labels {
+  *release_id : INTEGER <<FK>>
+  *label_id : INTEGER <<FK>>
+  --
+  catno : TEXT
+}
+
+' RELATIONSHIPS
+
+' Release <-> Artists
+releases ||..o{ release_artists
+artists ||..o{ release_artists
+
+' Release <-> Genres
+releases ||..o{ release_genres
+genres ||..o{ release_genres
+
+' Release <-> Styles
+releases ||..o{ release_styles
+styles ||..o{ release_styles
+
+' Release <-> Labels
+releases ||..o{ release_labels
+labels ||..o{ release_labels
+
+@enduml

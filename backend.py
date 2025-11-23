@@ -480,3 +480,53 @@ class DiscogsManager:
         if os.path.exists(db_path):
             os.remove(db_path)
             print("Database cleared.")
+
+    def get_releases_paginated(self, page: int = 0, page_size: int = 10, sort_by: str = 'date_added', desc: bool = True):
+        '''
+        Efficiently fetches a slice of data using SQL LIMIT and OFFSET.
+
+        :param page: Page number (0-indexed)
+        :type page: int
+        :param page_size: Number of items per page
+        :type page_size: int
+        :param sort_by: Column to sort by
+        :type sort_by: str
+        :param desc: Whether to sort in descending order
+        :type desc: bool
+        :return: List of release dicts and total row count
+        :rtype: (list, int)
+        '''
+        offset = page * page_size
+        order_dir = 'DESC' if desc else 'ASC'
+        
+        # Sanitise sort_by to prevent SQL injection (basic check)
+        allowed_sorts = ['title', 'year', 'date_added', 'id']
+        if sort_by not in allowed_sorts: sort_by = 'date_added'
+
+        query = f'''
+        SELECT 
+            r.id, r.title, r.year, r.thumb_url, 
+            a.name as artist_name, l.name as label_name
+        FROM releases r
+        -- Join first artist only for display efficiency
+        LEFT JOIN release_artists ra ON r.id = ra.release_id AND ra.is_primary = 1
+        LEFT JOIN artists a ON ra.artist_id = a.id
+        -- Join first label only
+        LEFT JOIN release_labels rl ON r.id = rl.release_id
+        LEFT JOIN labels l ON rl.label_id = l.id
+        GROUP BY r.id
+        ORDER BY r.{sort_by} {order_dir}
+        LIMIT ? OFFSET ?
+        '''
+        
+        count_query = "SELECT COUNT(*) FROM releases"
+
+        with self.get_db_connection() as conn:
+            # Get total count for the UI pagination component
+            total_rows = conn.execute(count_query).fetchone()[0]
+            
+            # Get specific page
+            cursor = conn.execute(query, (page_size, offset))
+            rows = [dict(row) for row in cursor.fetchall()]
+            
+        return rows, total_rows
