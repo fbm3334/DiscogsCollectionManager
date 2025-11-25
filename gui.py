@@ -7,6 +7,9 @@ manager = DiscogsManager()
 INITIAL_PAGE_SIZE = 20
 INITIAL_PAGE = 0
 
+dark = ui.dark_mode()
+dark.set_value(None) # Use system preference
+
 releases, num_releases = manager.get_releases_paginated(page=0, page_size=20, sort_by='artist', desc=False)
 # Table code inspired by https://github.com/zauberzeug/nicegui/discussions/1903#discussioncomment-8251437
 
@@ -37,6 +40,7 @@ def paginated_table():
         pagination=table_data['pagination'],
     )   
     table.classes('w-full max-h-screen-75 overflow-auto')
+    table.on_select(lambda e: print(f'Selected rows: {e}'))
     table.columns[6]['type'] = 'image'  # Set thumbnail column to image type
     table.on('request', do_pagination)
 
