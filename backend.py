@@ -207,12 +207,14 @@ class DiscogsManager:
         cursor.execute(f"INSERT INTO {table} ({name_col}) VALUES (?)", (value,))
         return cursor.lastrowid
 
-    def save_release_to_db(self, basic_info: dict):
+    def save_release_to_db(self, basic_info: dict, notes: dict = {}):
         '''
         Parses a single release dictionary and saves to normalised DB.
 
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
+        :param notes: Optional custom notes associated with the release
+        :type notes: dict
         '''
         rel_id = basic_info.get('id')
         if not rel_id: return
@@ -268,6 +270,52 @@ class DiscogsManager:
                 l_id = self._insert_lookup(cursor, 'labels', 'name', l_name)
                 cursor.execute("INSERT INTO release_labels VALUES (?, ?, ?)", (rel_id, l_id, l_cat))
 
+            # 6. Handle Custom Notes
+            if notes is not None:
+                for note in notes:
+                    field_id = note.get('field_id')
+                    note = note.get('value', '').strip()
+                    table_name = f'custom_field_{field_id}'
+                    cursor.execute(f'''
+                        INSERT OR REPLACE INTO {table_name} (release_id, field_value)
+                        VALUES (?, ?)
+                    ''', (rel_id, note))
+
+            conn.commit()
+
+    def get_custom_field_ids(self, releases_list: list[dc.CollectionItemInstance]) -> set:
+        '''
+        Extract custom field IDs from a list of CollectionItemInstance objects.
+
+        :param releases_list: List of CollectionItemInstance objects
+        :type releases_list: list[dc.CollectionItemInstance]
+        :return: Set of custom field IDs
+        :rtype: set
+        '''
+        custom_field_ids = set()
+        for item in releases_list:
+            if item.notes:
+                custom_field_id = item.notes[0]['field_id']
+                custom_field_ids.add(custom_field_id)
+        return custom_field_ids
+    
+    def create_custom_field_db(self, field_id: int):
+        '''
+        Create a table for storing custom field values.
+
+        :param field_id: ID of the custom field
+        :type field_id: int
+        '''
+        table_name = f'custom_field_{field_id}'
+        schema = f'''
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            release_id INTEGER PRIMARY KEY,
+            field_value TEXT,
+            FOREIGN KEY(release_id) REFERENCES releases(id)
+        );
+        '''
+        with self.get_db_connection() as conn:
+            conn.executescript(schema)
             conn.commit()
 
     def fetch_collection(self, force_update=False, progress_callback=None):
@@ -300,12 +348,18 @@ class DiscogsManager:
         releases_to_process = self.user.collection_folders[0].releases
         total_releases = len(releases_to_process)
 
+        # Get the custom field IDs present
+        custom_field_ids = self.get_custom_field_ids(releases_to_process)
+        # Create tables for custom fields
+        for field_id in custom_field_ids:
+            self.create_custom_field_db(field_id)
+
         for i, item in enumerate(releases_to_process):
-            # item.data['basic_information'] contains exactly what we need
+            # item.data contains exactly what we need
             # We don't need self.client.release() usually, unless we need extra deep data
             basic_info = item.data.get('basic_information')
             if basic_info:
-                self.save_release_to_db(basic_info)
+                self.save_release_to_db(basic_info, item.notes)
             
             if progress_callback:
                 progress_callback(i + 1, total_releases)
@@ -444,7 +498,6 @@ class DiscogsManager:
                             rel = self.client.release(res[0])
                             rel.refresh() # Ensure full data
                             sort_name = rel.data.get('artists_sort', a_name)
-                            print(sort_name)
                             updates.append((sort_name, a_id))
                         else:
                             updates.append((a_name, a_id))
