@@ -288,15 +288,17 @@ class DiscogsManager:
         Extract custom field IDs from a list of CollectionItemInstance objects.
 
         :param releases_list: List of CollectionItemInstance objects
-        :type releases_list: list[dc.CollectionItemInstance]
+        :type releases_list: list[dc.CollectionItemI`nstance]
         :return: Set of custom field IDs
         :rtype: set
         '''
         custom_field_ids = set()
         for item in releases_list:
+            print(item.notes)
             if item.notes:
-                custom_field_id = item.notes[0]['field_id']
-                custom_field_ids.add(custom_field_id)
+                for note in item.notes:
+                    custom_field_id = note['field_id']
+                    custom_field_ids.add(custom_field_id)
         return custom_field_ids
     
     def create_custom_field_db(self, field_id: int):
