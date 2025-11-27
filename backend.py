@@ -129,7 +129,7 @@ class DiscogsManager:
     # --- Data Ingestion ---
     def _insert_lookup(self, cursor, table, name_col, value):
         '''
-        Helper to insert into lookup tables (Genres, Styles, Labels) and return ID.
+        Helper to insert into lookup tables and return ID.
 
         :param cursor: SQLite cursor
         :param table: Table name
@@ -149,22 +149,20 @@ class DiscogsManager:
         cursor.execute(f"INSERT INTO {table} ({name_col}) VALUES (?)", (value,))
         return cursor.lastrowid
 
-    def save_release_to_db(self, basic_info: dict, notes: dict = {}):
+    def _save_release_to_release_db(self, basic_info: dict):
         '''
-        Parses a single release dictionary and saves to normalised DB.
+        Upserts the release into the main releases database.
 
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
-        :param notes: Optional custom notes associated with the release
-        :type notes: dict
         '''
         rel_id = basic_info.get('id')
-        if not rel_id: return
+        if not rel_id:
+            return
 
         with self.get_db_connection() as conn:
             cursor = conn.cursor()
 
-            # 1. Upsert Release
             cursor.execute('''
                 INSERT OR REPLACE INTO releases (id, master_id, title, year, thumb_url, release_url)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -177,34 +175,59 @@ class DiscogsManager:
                 f"https://www.discogs.com/release/{rel_id}"
             ))
 
-            # 2. Handle Artists
+            conn.commit()
+
+    def _save_artist_to_artist_db(self, basic_info: dict):
+        '''
+        Sort the release into the relevant artist databases.
+
+        :param basic_info: Basic information dictionary from Discogs release
+        :type basic_info: dict
+        '''
+        rel_id = basic_info.get('id')
+        if not rel_id:
+            return
+
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
             # Clear old links for this release to prevent duplication on updates
             cursor.execute("DELETE FROM release_artists WHERE release_id = ?", (rel_id,))
-            
             for i, artist in enumerate(basic_info.get('artists', [])):
                 a_id = artist.get('id')
                 a_name = artist.get('name')
-                
                 # Insert Artist if not exists
                 cursor.execute("INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)", (a_id, a_name))
-                
-                # Link - CHANGED THIS LINE TO "INSERT OR IGNORE"
-                cursor.execute("INSERT OR IGNORE INTO release_artists (release_id, artist_id, is_primary) VALUES (?, ?, ?)",
-                               (rel_id, a_id, 1 if i == 0 else 0))
+                cursor.execute(
+                    "INSERT OR IGNORE INTO release_artists (release_id, artist_id, is_primary) VALUES (?, ?, ?)",
+                    (rel_id, a_id, 1 if i == 0 else 0)
+                )
+            
+            conn.commit()
 
-            # 3. Handle Genres
+    def _save_style_genre_label_to_dbs(self, basic_info: dict):
+        '''
+        Save the style, genre and label info into relevant databases.
+
+        :param basic_info: Basic information dictionary from Discogs release
+        :type basic_info: dict
+        '''
+        rel_id = basic_info.get('id')
+        if not rel_id:
+            return
+
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+
             cursor.execute("DELETE FROM release_genres WHERE release_id = ?", (rel_id,))
             for g in basic_info.get('genres', []):
                 g_id = self._insert_lookup(cursor, 'genres', 'name', g)
                 cursor.execute("INSERT INTO release_genres VALUES (?, ?)", (rel_id, g_id))
 
-            # 4. Handle Styles
             cursor.execute("DELETE FROM release_styles WHERE release_id = ?", (rel_id,))
             for s in basic_info.get('styles', []):
                 s_id = self._insert_lookup(cursor, 'styles', 'name', s)
                 cursor.execute("INSERT INTO release_styles VALUES (?, ?)", (rel_id, s_id))
 
-            # 5. Handle Labels
             cursor.execute("DELETE FROM release_labels WHERE release_id = ?", (rel_id,))
             for l in basic_info.get('labels', []):
                 l_name = l.get('name')
@@ -212,7 +235,23 @@ class DiscogsManager:
                 l_id = self._insert_lookup(cursor, 'labels', 'name', l_name)
                 cursor.execute("INSERT INTO release_labels VALUES (?, ?, ?)", (rel_id, l_id, l_cat))
 
-            # 6. Handle Custom Notes
+            conn.commit()
+
+    def _save_custom_notes_to_dbs(self, basic_info: dict, notes: dict | None = None):
+        '''
+        Save the custom notes to the databases.
+
+        :param basic_info: Basic information dictionary from Discogs release
+        :type basic_info: dict
+        :param notes: Optional custom notes associated with the release
+        :type notes: dict | None
+        '''
+        rel_id = basic_info.get('id')
+        if not rel_id:
+            return
+
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
             if notes is not None:
                 for note in notes:
                     field_id = note.get('field_id')
@@ -224,6 +263,21 @@ class DiscogsManager:
                     ''', (rel_id, note))
 
             conn.commit()
+
+    def save_release_to_db(self, basic_info: dict, notes: dict | None = None):
+        '''
+        Parses a single release dictionary and saves to normalised DB.
+
+        :param basic_info: Basic information dictionary from Discogs release
+        :type basic_info: dict
+        :param notes: Optional custom notes associated with the release
+        :type notes: dict | None
+        '''
+
+        self._save_release_to_release_db(basic_info)
+        self._save_artist_to_artist_db(basic_info)
+        self._save_style_genre_label_to_dbs(basic_info)
+        self._save_custom_notes_to_dbs(basic_info, notes)
 
     def get_custom_field_ids(self, releases_list: list[dc.CollectionItemInstance]) -> set:
         '''
@@ -262,31 +316,18 @@ class DiscogsManager:
             conn.executescript(schema)
             conn.commit()
 
-    def fetch_collection(self, force_update=False, progress_callback=None):
+    def fetch_collection(self, progress_callback=None):
         '''
-        Logic:
-        1. If not force_update, try loading from DB.
-        2. If DB empty or force_update, fetch from API -> Save to DB -> Load from DB.
-
-        :param force_update: Whether to force API fetch
-        :type force_update: bool
+        Fetches the collection from Discogs and updates the databases.
         :param progress_callback: Optional callback to report progress
         :type progress_callback: callable
-        :return: DataFrame of collection
-        :rtype: pd.DataFrame
         '''
         
-        # Attempt to load existing data first
-        if not force_update:
-            self.df = self.load_df_from_db()
-            if not self.df.empty:
-                # Check update interval (optional logic here)
-                print("Loaded collection from Database.")
-                return self.df
-
         # API Download
-        if not self.client: self.connect_client()
-        if not self.user: self.identity()
+        if not self.client:
+            self.connect_client()
+        if not self.user:
+            self.identity()
 
         print("Fetching from Discogs API...")
         releases_to_process = self.user.collection_folders[0].releases
@@ -307,169 +348,126 @@ class DiscogsManager:
             
             if progress_callback:
                 progress_callback(i + 1, total_releases)
-        
-        # Reload DF from the newly populated DB
-        self.df = self.load_df_from_db()
-        return self.df
 
-    def load_df_from_db(self):
+    def _get_artists_missing_sort_name(self):
         '''
-        Reconstructs the flat DataFrame from the normalized SQLite tables.
-        This simulates your old JSON structure for compatibility with the rest of your app.
+        Fetches artist IDs and names from the DB that lack a sort_name.
         '''
-        query = '''
-        SELECT 
-            r.id, r.master_id, r.title, r.release_year, r.thumb_url as image_url, r.release_url as url,
-            
-            -- Aggregate Artists
-            GROUP_CONCAT(DISTINCT a.name) as artists,
-            a_first.id as first_artist_id,
-            
-            -- We will fetch lists for genres/styles/labels in a post-process or subquery
-            -- Doing complex JSON aggregation in SQLite is possible but verbose.
-            -- For simplicity, we fetch core data and lists separately, or use Python to aggregate.
-            
-            r.year
-        FROM releases r
-        LEFT JOIN release_artists ra ON r.id = ra.release_id AND ra.is_primary = 1
-        LEFT JOIN artists a_first ON ra.artist_id = a_first.id
-        LEFT JOIN release_artists ra_all ON r.id = ra_all.release_id
-        LEFT JOIN artists a ON ra_all.artist_id = a.id
-        GROUP BY r.id
-        '''
-        
-        # It is actually cleaner to read tables and merge in Pandas to ensure 
-        # we get actual Python Lists, not comma-separated strings.
-        
         with self.get_db_connection() as conn:
-            df_releases = pd.read_sql("SELECT * FROM releases", conn)
-            if df_releases.empty: return pd.DataFrame()
-
-            # Helper to fetch lookup map
-            def get_lookup_map(query, id_col, val_col):
-                sub_df = pd.read_sql(query, conn)
-                return sub_df.groupby(id_col)[val_col].apply(list).to_dict()
-
-            # 1. Genres
-            genre_map = get_lookup_map('''
-                SELECT rg.release_id, g.name 
-                FROM release_genres rg JOIN genres g ON rg.genre_id = g.id
-            ''', 'release_id', 'name')
-
-            # 2. Styles
-            style_map = get_lookup_map('''
-                SELECT rs.release_id, s.name 
-                FROM release_styles rs JOIN styles s ON rs.style_id = s.id
-            ''', 'release_id', 'name')
-            
-            # 3. Artists (List)
-            artist_map = get_lookup_map('''
-                SELECT ra.release_id, a.name 
-                FROM release_artists ra JOIN artists a ON ra.artist_id = a.id
-            ''', 'release_id', 'name')
-
-            # 4. Labels & CatNos
-            label_df = pd.read_sql('''
-                SELECT rl.release_id, l.name, rl.catno 
-                FROM release_labels rl JOIN labels l ON rl.label_id = l.id
-            ''', conn)
-            label_map = label_df.groupby('release_id')['name'].apply(list).to_dict()
-            catno_map = label_df.groupby('release_id')['catno'].apply(list).to_dict()
-
-            # 5. First Artist ID (for sorting)
-            first_artist_df = pd.read_sql('''
-                SELECT release_id, artist_id FROM release_artists WHERE is_primary = 1
-            ''', conn)
-            first_artist_map = first_artist_df.set_index('release_id')['artist_id'].to_dict()
-
-        # Map data back to DataFrame
-        df_releases['genre_list'] = df_releases['id'].map(genre_map).apply(lambda x: x if isinstance(x, list) else [])
-        df_releases['style_list'] = df_releases['id'].map(style_map).apply(lambda x: x if isinstance(x, list) else [])
-        df_releases['artist_list'] = df_releases['id'].map(artist_map).apply(lambda x: x if isinstance(x, list) else [])
-        df_releases['label_list'] = df_releases['id'].map(label_map).apply(lambda x: x if isinstance(x, list) else [])
-        df_releases['catno_list'] = df_releases['id'].map(catno_map).apply(lambda x: x if isinstance(x, list) else [])
-        df_releases['first_artist_id'] = df_releases['id'].map(first_artist_map)
-        
-        # Create string representation for display
-        df_releases['artists'] = df_releases['artist_list'].apply(lambda x: ', '.join(x))
-
-        # Retrieve cached sort names
-        with self.get_db_connection() as conn:
-             artist_sort_df = pd.read_sql("SELECT id, sort_name FROM artists WHERE sort_name IS NOT NULL", conn)
-             sort_map = artist_sort_df.set_index('id')['sort_name'].to_dict()
-             df_releases['artist_sort_name'] = df_releases['first_artist_id'].map(sort_map).fillna('')
-
-        return df_releases
-
-    # --- Artist Sort Name Logic ---
-    def fetch_artist_sort_names(self, progress_callback=None):
-        '''
-        Updates the 'artists' table with sort_names where missing.
-        '''
-        if self.df.empty: self.fetch_collection()
-        
-        # Find artists in DB that don't have a sort_name
-        with self.get_db_connection() as conn:
-            # Get unique artist IDs from our collection that lack sort names
+            # Assumes the connection/cursor supports dict-like access for rows
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT id, name FROM artists WHERE sort_name IS NULL")
-            artists_to_check = cursor.fetchall()
+            return cursor.fetchall()
+        
+    def _fetch_sort_name_from_api(self, artist_id, default_name):
+        '''
+        Uses the Discogs client to find the accurate sort name.
+
+        :param artist_id: Artist ID
+        :param default_name: Default name
+        :return: Sort name
+        '''
+        
+        # Fetch artist details from API (Rate limits apply)
+        artist_obj = self.client.artist(artist_id)
+        
+        # Find a related release to get the 'artists_sort' field
+        with self.get_db_connection() as sub_conn:
+            res = sub_conn.execute(
+                "SELECT release_id FROM release_artists WHERE artist_id = ? LIMIT 1", 
+                (artist_id,)
+            ).fetchone()
+        
+        if res:
+            rel = self.client.release(res[0])
+            rel.refresh() # Ensure full data
+            return rel.data.get('artists_sort', default_name)
+        else:
+            return default_name
+        
+    def _process_and_batch_updates(self, artists_to_check, progress_callback):
+        '''
+        Iterates through artists, determines sort names, and commits in batches.
+
+        :param artists_to_check: Artists to check
+        :param progress_callback: Optional progress callback
+        '''
         
         total = len(artists_to_check)
-        thorough = self.settings.get('thorough_name_fetch', False)
-        
-        if not self.client: self.connect_client()
-
         updates = [] # Store tuples (sort_name, id)
-
+        
         for i, row in enumerate(artists_to_check):
             a_id, a_name = row['id'], row['name']
             
-            # 1. Simple check (Prefixes)
-            if not thorough and not self.check_artist_prefix(a_name):
-                updates.append((a_name, a_id))
+            # Determine the sort name using the refactored helper
+            sort_name = self._determine_sort_name(a_id, a_name)
+            updates.append((sort_name, a_id))
             
-            # 2. API Fetch
-            else:
-                try:
-                    # Fetch artist details from API
-                    # Note: Discogs API rate limits apply; this can be slow
-                    artist_obj = self.client.artist(a_id)
-                    
-                    with self.get_db_connection() as sub_conn:
-                        res = sub_conn.execute("SELECT release_id FROM release_artists WHERE artist_id = ? LIMIT 1", (a_id,)).fetchone()
-                        if res:
-                            rel = self.client.release(res[0])
-                            rel.refresh() # Ensure full data
-                            sort_name = rel.data.get('artists_sort', a_name)
-                            updates.append((sort_name, a_id))
-                        else:
-                            updates.append((a_name, a_id))
-                            
-                except Exception as e:
-                    print(f"Error fetching sort name for {a_name}: {e}")
-                    updates.append((a_name, a_id))
-
             if progress_callback:
                 progress_callback(i + 1, total)
                 
-            # Batch update every 10 or at end
+            # Batch update every 10
             if len(updates) >= 10:
-                with self.get_db_connection() as conn:
-                    conn.executemany("UPDATE artists SET sort_name = ? WHERE id = ?", updates)
-                    conn.commit()
+                self._commit_batch_updates(updates)
                 updates = []
-        
+                
         # Commit remaining
         if updates:
-            with self.get_db_connection() as conn:
-                conn.executemany("UPDATE artists SET sort_name = ? WHERE id = ?", updates)
-                conn.commit()
+            self._commit_batch_updates(updates)
+
+    def _commit_batch_updates(self, updates_batch):
+        '''
+        Executes the database update for a given batch of (sort_name, id) tuples.
+
+        :param updates_batch: Batch of tuples
+        '''
         
-        # Refresh the dataframe
-        return self.load_df_from_db()
+        with self.get_db_connection() as conn:
+            conn.executemany("UPDATE artists SET sort_name = ? WHERE id = ?", updates_batch)
+            conn.commit()
+        
+    def _determine_sort_name(self, artist_id, artist_name):
+        '''
+        Determines the correct sort name, using simple check or API fetch.
+
+        :param artist_id: Artist ID.
+        :param artist_name: Artist name.
+        '''
+        
+        thorough = self.settings.get('thorough_name_fetch', False)
+        
+        # 1. Simple Check (Fast Path)
+        if not thorough and not self.check_artist_prefix(artist_name):
+            return artist_name  # Sort name is the regular name
+        
+        # 2. API Fetch (Slow Path)
+        try:
+            return self._fetch_sort_name_from_api(artist_id, artist_name)
+        except Exception as e:
+            print(f"Error fetching sort name for {artist_name}: {e}")
+            return artist_name # Fallback to regular name on error
+    
+
+    def fetch_artist_sort_names(self, progress_callback=None):
+        '''
+        Coordinates the fetching and updating of artist sort names.
+        '''
+                    
+        artists_to_check = self._get_artists_missing_sort_name()
+        if not artists_to_check:
+            return
+            
+        if not self.client:
+            self.connect_client()
+            
+        # 2. Processing and Batching
+        self._process_and_batch_updates(artists_to_check, progress_callback)
+        
 
     def check_artist_prefix(self, artist_name):
+        '''
+        Check the artist prefix against a regular expression,
+        '''
         return re.match(REGEX_STRING, artist_name, re.IGNORECASE) is not None
     
     def clear_caches(self):
@@ -478,53 +476,158 @@ class DiscogsManager:
             os.remove(db_path)
             print("Database cleared.")
 
-    def get_releases_paginated(self, page: int = 0, page_size: int = 10, sort_by: str = 'date_added', desc: bool = True, search_query: str = None):
+    def get_releases_paginated(self, page: int = 0, page_size: int = 10, sort_by: str = 'date_added', desc: bool = True, search_query: str = ""):
         '''
-        Fetches data with support for Search, Sorting, and Pagination.
+        Coordinates fetching releases with full support for search, sorting, and pagination.
+
+        :param page: The page number to retrieve (0-indexed).
+        :type page: int
+        :param page_size: The number of items per page.
+        :type page_size: int
+        :param sort_by: The column name to sort by ('title', 'year', 'date_added', 'id', 'artist').
+        :type sort_by: str
+        :param desc: If True, results are sorted in descending order; otherwise, ascending.
+        :type desc: bool
+        :param search_query: The text to search for across multiple release fields.
+        :type search_query: str
+        :returns: A tuple containing the list of release rows and the total count of matching releases.
+        :rtype: tuple[list, int]
         '''
+        # 1. Prepare SQL Components
+        order_clause = self._build_order_clause(sort_by, desc)
+        where_sql, search_params = self._build_where_clause(search_query)
+
+        # 2. Prepare Pagination
         offset = page * page_size
+
+        with self.get_db_connection() as conn:
+            # 3. Get Total Count
+            total_rows = self._get_filtered_count(conn, where_sql, search_params)
+
+            # 4. Handle 'Fetch All' and Finalize Pagination Params
+            limit, final_offset = self._get_pagination_limits(page_size, total_rows, offset)
+            full_params = search_params + [limit, final_offset]
+
+            # 5. Fetch Data
+            query = self._build_main_query(where_sql, order_clause)
+            cursor = conn.execute(query, full_params)
+            rows = [dict(row) for row in cursor.fetchall()]
+
+        return rows, total_rows
+
+    def _build_order_clause(self, sort_by: str, desc: bool) -> str:
+        '''
+        Constructs the SQL ORDER BY clause with safe column selection.
+
+        :param sort_by: The column name to sort by.
+        :type sort_by: str
+        :param desc: If True, sort descending; otherwise, ascending.
+        :type desc: bool
+        :returns: The complete SQL fragment for the ORDER BY clause.
+        :rtype: str
+        '''
         order_dir = 'DESC' if desc else 'ASC'
-        
-        # 1. Safe Sort Column Selection
         allowed_sorts = ['title', 'year', 'date_added', 'id', 'artist']
-        if sort_by not in allowed_sorts: sort_by = 'date_added'
+        
+        # Default to 'date_added' if input is invalid
+        if sort_by not in allowed_sorts:
+            sort_by = 'date_added'
 
         if sort_by == 'artist':
-            order_clause = f"COALESCE(a.sort_name, a.name) COLLATE NOCASE {order_dir}"
+            # Use sort_name for artist sorting (collation is typically needed for SQLite text sorting)
+            return f"COALESCE(a.sort_name, a.name) COLLATE NOCASE {order_dir}"
         else:
-            order_clause = f"r.{sort_by} {order_dir}"
+            return f"r.{sort_by} {order_dir}"
 
-        # 2. Construct the WHERE clause dynamically
-        where_sql = ""
-        search_params = []
-        
-        if search_query:
-            # We verify title, artist name, label name, year, and catalog number
-            where_sql = '''
-            WHERE (
-                r.title LIKE ? OR
-                r.year LIKE ? OR
-                a.name LIKE ? OR
-                l.name LIKE ? OR
-                rl.catno LIKE ?
-            )
-            '''
-            # We need to pass the search term for EACH '?' placeholder
-            term = f"%{search_query}%"
-            search_params = [term, term, term, term, term]
+    def _build_where_clause(self, search_query: str) -> tuple[str, list]:
+        '''
+        Constructs the SQL WHERE clause and prepares search parameters.
 
-        # 3. Main Query
-        # Note: We removed "ra.is_primary = 1" from the JOIN for the search context 
-        # so we can find releases even if the searched artist is a "feat." or remixer.
-        # However, for display consistency in the SELECT, we might still prefer the primary.
-        # For a generic search, checking ALL joined artists is better.
+        :param search_query: The text to search for.
+        :type search_query: str
+        :returns: A tuple containing the WHERE SQL fragment and the list of parameters.
+        :rtype: tuple[str, list]
+        '''
+        if not search_query:
+            return "", []
+
+        # SQL fragment for multi-field search
+        where_sql = '''
+        WHERE (
+            r.title LIKE ? OR
+            r.year LIKE ? OR
+            a.name LIKE ? OR
+            l.name LIKE ? OR
+            rl.catno LIKE ?
+        )
+        '''
+        # Parameters for the placeholders
+        term = f"%{search_query}%"
+        # Must repeat the term for each '?' in the WHERE clause
+        search_params = [term, term, term, term, term]
         
-        query = f'''
+        return where_sql, search_params
+
+    def _get_filtered_count(self, conn, where_sql: str, search_params: list) -> int:
+        '''
+        Executes the COUNT query to get the total number of rows matching the filter.
+
+        :param conn: The active database connection object.
+        :type conn: object
+        :param where_sql: The WHERE SQL fragment, including 'WHERE' if present.
+        :type where_sql: str
+        :param search_params: The list of parameters for the search filter.
+        :type search_params: list
+        :returns: The total number of rows matching the criteria.
+        :rtype: int
+        '''
+        count_query = f'''
+        SELECT COUNT(DISTINCT r.id) 
+        FROM releases r
+        LEFT JOIN release_artists ra ON r.id = ra.release_id
+        LEFT JOIN artists a ON ra.artist_id = a.id
+        LEFT JOIN release_labels rl ON r.id = rl.release_id
+        LEFT JOIN labels l ON rl.label_id = l.id
+        {where_sql}
+        '''
+        # Pass search_params to filter the count correctly
+        return conn.execute(count_query, search_params).fetchone()[0]
+
+    def _get_pagination_limits(self, page_size: int, total_rows: int, offset: int) -> tuple[int, int]:
+        '''
+        Calculates the final LIMIT and OFFSET values, handling the 'fetch all' case.
+
+        :param page_size: The requested items per page.
+        :type page_size: int
+        :param total_rows: The total number of rows available.
+        :type total_rows: int
+        :param offset: The calculated starting offset.
+        :type offset: int
+        :returns: A tuple of (limit, offset) to use in the main query.
+        :rtype: tuple[int, int]
+        '''
+        if page_size == 0:
+            # Case: Fetch all releases
+            return total_rows, 0
+        else:
+            return page_size, offset
+
+    def _build_main_query(self, where_sql: str, order_clause: str) -> str:
+        '''
+        Constructs the main SQL query for fetching release data.
+
+        :param where_sql: The WHERE SQL fragment, including 'WHERE' if present.
+        :type where_sql: str
+        :param order_clause: The complete SQL fragment for the ORDER BY clause.
+        :type order_clause: str
+        :returns: The full parameterized SQL query string.
+        :rtype: str
+        '''
+        return f'''
         SELECT 
             r.id,
             REPLACE(GROUP_CONCAT(DISTINCT a.name), ',', ', ') as artist_name,
             r.title, 
-            
             REPLACE(GROUP_CONCAT(DISTINCT l.name), ',', ', ') as label_name,
             rl.catno, r.year, r.release_url
         FROM releases r
@@ -537,32 +640,3 @@ class DiscogsManager:
         ORDER BY {order_clause}
         LIMIT ? OFFSET ?
         '''
-        
-        # 4. Count Query (Must also respect the search filter!)
-        count_query = f'''
-        SELECT COUNT(DISTINCT r.id) 
-        FROM releases r
-        LEFT JOIN release_artists ra ON r.id = ra.release_id
-        LEFT JOIN artists a ON ra.artist_id = a.id
-        LEFT JOIN release_labels rl ON r.id = rl.release_id
-        LEFT JOIN labels l ON rl.label_id = l.id
-        {where_sql}
-        '''
-
-        with self.get_db_connection() as conn:
-            # Execute Count
-            # search_params is passed here to filter the count correctly
-            total_rows = conn.execute(count_query, search_params).fetchone()[0]
-            
-            # Execute Data Fetch
-            # Combine search_params with pagination params (limit, offset)
-            # If page_size is 0 (fetch all), we handle that case
-            if page_size == 0:
-                page_size = total_rows
-                offset = 0
-            
-            full_params = search_params + [page_size, offset]
-            cursor = conn.execute(query, full_params)
-            rows = [dict(row) for row in cursor.fetchall()]
-            
-        return rows, total_rows

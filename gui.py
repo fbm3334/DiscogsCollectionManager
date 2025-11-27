@@ -68,4 +68,5 @@ def do_pagination(request):
 
 paginated_table()
 get_full_count()
+coll = manager.fetch_collection()
 ui.run()
