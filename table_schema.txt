@@ -1,0 +1,62 @@
+CREATE TABLE IF NOT EXISTS releases (
+    id INTEGER PRIMARY KEY,
+    master_id INTEGER,
+    title TEXT,
+    year TEXT,
+    thumb_url TEXT,
+    release_url TEXT,
+    date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS artists (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    sort_name TEXT
+);
+
+CREATE TABLE IF NOT EXISTS genres (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS styles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS labels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE
+);
+
+-- Junction Tables
+CREATE TABLE IF NOT EXISTS release_artists (
+    release_id INTEGER,
+    artist_id INTEGER,
+    is_primary BOOLEAN DEFAULT 1,
+    FOREIGN KEY(release_id) REFERENCES releases(id),
+    FOREIGN KEY(artist_id) REFERENCES artists(id),
+    PRIMARY KEY (release_id, artist_id)
+);
+
+CREATE TABLE IF NOT EXISTS release_genres (
+    release_id INTEGER,
+    genre_id INTEGER,
+    FOREIGN KEY(release_id) REFERENCES releases(id),
+    FOREIGN KEY(genre_id) REFERENCES genres(id)
+);
+
+CREATE TABLE IF NOT EXISTS release_styles (
+    release_id INTEGER,
+    style_id INTEGER,
+    FOREIGN KEY(release_id) REFERENCES releases(id),
+    FOREIGN KEY(style_id) REFERENCES styles(id)
+);
+
+CREATE TABLE IF NOT EXISTS release_labels (
+    release_id INTEGER,
+    label_id INTEGER,
+    catno TEXT,
+    FOREIGN KEY(release_id) REFERENCES releases(id),
+    FOREIGN KEY(label_id) REFERENCES labels(id)
+);

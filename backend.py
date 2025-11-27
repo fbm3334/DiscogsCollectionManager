@@ -5,9 +5,7 @@ Backend logic for connecting to Discogs and fetching user collection data.
 '''
 
 import os
-import time
 import sqlite3
-import json
 import re
 from contextlib import contextmanager
 
@@ -40,7 +38,7 @@ class DiscogsManager:
         Load settings from YAML file.
         '''
         try:
-            with open('settings.yml', 'r') as file:
+            with open('settings.yml', 'r', encoding='utf-8') as file:
                 self.settings = yaml.safe_load(file) or {}
         except FileNotFoundError:
             self.settings = {}
@@ -53,7 +51,7 @@ class DiscogsManager:
         :type new_settings: dict
         '''
         self.settings.update(new_settings)
-        with open('settings.yml', 'w') as file:
+        with open('settings.yml', 'w', encoding='utf-8') as file:
             yaml.dump(self.settings, file)
 
     def load_token(self):
@@ -61,7 +59,7 @@ class DiscogsManager:
         Load personal access token from secrets YAML file.
         '''
         try:
-            with open('secrets.yml', 'r') as file:
+            with open('secrets.yml', 'r', encoding='utf-8') as file:
                 secrets = yaml.safe_load(file)
                 self.pat = secrets.get('personal_access_token')
         except FileNotFoundError:
@@ -70,9 +68,11 @@ class DiscogsManager:
     def save_token(self, token):
         '''
         Save personal access token to secrets YAML file.
+
+        :param token: Personal access token
         '''
         self.pat = token
-        with open('secrets.yml', 'w') as file:
+        with open('secrets.yml', 'w', encoding='utf-8') as file:
             file.write(f"personal_access_token: {token}\n")
 
     def connect_client(self):
@@ -86,6 +86,8 @@ class DiscogsManager:
     def identity(self):
         '''
         Fetch and return the user identity from Discogs.
+
+        :return: Discogs user identity.
         '''
         if not self.client:
             raise ValueError("Client not connected.")
@@ -95,6 +97,8 @@ class DiscogsManager:
     def get_db_path(self):
         '''
         Get the path to the SQLite database file.
+        
+        :return: Path to SQLite database file.
         '''
         folder = self.settings.get('cache_folder', 'cache')
         os.makedirs(folder, exist_ok=True)
@@ -116,73 +120,11 @@ class DiscogsManager:
         '''
         Create normalised tables if they don't exist.
         '''
-        schema = '''
-        CREATE TABLE IF NOT EXISTS releases (
-            id INTEGER PRIMARY KEY,
-            master_id INTEGER,
-            title TEXT,
-            year TEXT,
-            thumb_url TEXT,
-            release_url TEXT,
-            date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS artists (
-            id INTEGER PRIMARY KEY,
-            name TEXT,
-            sort_name TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS genres (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE
-        );
-
-        CREATE TABLE IF NOT EXISTS styles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE
-        );
-        
-        CREATE TABLE IF NOT EXISTS labels (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE
-        );
-
-        -- Junction Tables
-        CREATE TABLE IF NOT EXISTS release_artists (
-            release_id INTEGER,
-            artist_id INTEGER,
-            is_primary BOOLEAN DEFAULT 1,
-            FOREIGN KEY(release_id) REFERENCES releases(id),
-            FOREIGN KEY(artist_id) REFERENCES artists(id),
-            PRIMARY KEY (release_id, artist_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS release_genres (
-            release_id INTEGER,
-            genre_id INTEGER,
-            FOREIGN KEY(release_id) REFERENCES releases(id),
-            FOREIGN KEY(genre_id) REFERENCES genres(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS release_styles (
-            release_id INTEGER,
-            style_id INTEGER,
-            FOREIGN KEY(release_id) REFERENCES releases(id),
-            FOREIGN KEY(style_id) REFERENCES styles(id)
-        );
-        
-        CREATE TABLE IF NOT EXISTS release_labels (
-            release_id INTEGER,
-            label_id INTEGER,
-            catno TEXT,
-            FOREIGN KEY(release_id) REFERENCES releases(id),
-            FOREIGN KEY(label_id) REFERENCES labels(id)
-        );
-        '''
-        with self.get_db_connection() as conn:
-            conn.executescript(schema)
-            conn.commit()
+        with open('table_schema.txt', 'r', encoding='utf-8') as schema_file:
+            schema = schema_file.read()
+            with self.get_db_connection() as conn:
+                conn.executescript(schema)
+                conn.commit()
 
     # --- Data Ingestion ---
     def _insert_lookup(self, cursor, table, name_col, value):
