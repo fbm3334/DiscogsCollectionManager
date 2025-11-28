@@ -1,13 +1,13 @@
-location_field: 4
-output_folder: output
+auto_update: true
 cache_folder: cache
 collection_cache_file: collection.json
 export_types:
-    csv: true
-    excel: true
-auto_update: true
-update_interval_hours: 24
+  csv: true
+  excel: true
+location_field: 4
+output_folder: output
 pull_artist_sort_from_discogs:
-    enabled: true
-    thorough: false
-    cache_file: artist_sort_cache.json
+  cache_file: artist_sort_cache.json
+  enabled: true
+  thorough: true
+update_interval_hours: 24

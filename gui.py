@@ -1,4 +1,5 @@
 from nicegui import ui, run
+import yaml
 
 from backend import DiscogsManager
 
@@ -21,6 +22,107 @@ table_data = {
         'rowsNumber': num_releases,
     },
 }
+
+app_settings = manager.settings.copy()
+
+def save_settings():
+    '''
+    Callback function for save settings button.
+    '''
+    manager.save_settings(app_settings)
+    ui.notify('Settings saved.')
+
+@ui.refreshable
+def _render_general_settings():
+    '''
+    Render the general settings.
+    '''
+    with ui.card_section().classes('w-full'):
+        ui.label('General').classes('text-xl font-semibold text-primary')
+        ui.number('Location Field Index',
+                    value=app_settings['location_field'],
+                    min=0, precision=0,
+                    on_change=lambda e: app_settings.update({'location_field': int(e.value)}))
+        ui.input('Output Folder',
+                    value=app_settings['output_folder'],
+                    on_change=lambda e: app_settings.update({'output_folder': e.value}))
+        ui.input('Cache Folder',
+                    value=app_settings['cache_folder'],
+                    on_change=lambda e: app_settings.update({'cache_folder': e.value}))
+        ui.input('Collection Cache File',
+                    value=app_settings['collection_cache_file'],
+                    on_change=lambda e: app_settings.update({'collection_cache_file': e.value}))
+        
+@ui.refreshable
+def _render_automatic_update_settings():
+    '''
+    Render the automatic update settings.
+    '''
+    with ui.card_section().classes('w-full'):
+        ui.label('Automatic Update').classes('text-xl font-semibold text-primary')
+        ui.switch('Enable Auto Update',
+                    value=app_settings['auto_update'],
+                    on_change=lambda e: app_settings.update({'auto_update': e.value}))
+        
+        with ui.row().classes('items-center w-full'):
+            ui.number('Update Interval (hours)',
+                        value=app_settings['update_interval_hours'],
+                        min=1, precision=0,
+                        on_change=lambda e: app_settings.update({'update_interval_hours': int(e.value)})) \
+                .classes('flex-grow')
+
+@ui.refreshable     
+def _render_export_type_settings():
+    '''
+    Render the export type settings.
+    '''
+    with ui.card_section().classes('w-full'):
+        ui.label('Export Types').classes('text-xl font-semibold text-primary')
+        with ui.row().classes('w-full justify-start gap-4'):
+            ui.checkbox('CSV Export',
+                        value=app_settings['export_types']['csv'],
+                        on_change=lambda e: app_settings['export_types'].update({'csv': e.value}))
+            ui.checkbox('Excel Export',
+                        value=app_settings['export_types']['excel'],
+                        on_change=lambda e: app_settings['export_types'].update({'excel': e.value}))
+            
+@ui.refreshable
+def _render_name_refresh_settings():
+    '''
+    Render the name refresh settings.
+    '''
+    with ui.card_section().classes('w-full'):
+        ui.label('Artist Sort Data').classes('text-xl font-semibold text-primary')
+        ui.switch('Pull Artist Sort from Discogs',
+                value=app_settings['pull_artist_sort_from_discogs']['enabled'], 
+                on_change=lambda e: app_settings['pull_artist_sort_from_discogs'].update({'enabled': e.value}))
+        ui.switch('Thorough Mode (Slower)',
+                value=app_settings['pull_artist_sort_from_discogs']['thorough'], 
+                on_change=lambda e: app_settings['pull_artist_sort_from_discogs'].update({'thorough': e.value}))
+        ui.input('Artist Sort Cache File',
+                value=app_settings['pull_artist_sort_from_discogs']['cache_file'], 
+                on_change=lambda e: app_settings['pull_artist_sort_from_discogs'].update({'cache_file': e.value}))
+
+@ui.refreshable
+def settings_page():
+    '''
+    Renders the complete configuration form.
+    '''
+    with ui.card().classes('w-full max-w-2xl mx-auto shadow-lg'):
+        ui.label('Settings').classes('text-2xl font-bold w-full mb-4')
+
+        _render_general_settings()
+        ui.separator()
+        _render_automatic_update_settings()
+        ui.separator()
+        _render_export_type_settings()
+        ui.separator()
+        _render_name_refresh_settings()
+    
+        # Save button
+        with ui.card_actions().classes('w-full justify-end'):
+            # The save button now calls the function that writes to the file
+            ui.button('Save Settings', on_click=save_settings, color='positive')
 
 @ui.refreshable
 def paginated_table():
@@ -66,7 +168,20 @@ def do_pagination(request):
     paginated_table.refresh()
     print('TEST')
 
-paginated_table()
+# --- Main Page Layout ---
+
+with ui.header().classes('items-center justify-center bg-gray-900 text-white shadow-lg'):
+    ui.label('Discogs Manager Dashboard').classes('text-3xl font-extrabold')
+
+with ui.tabs().classes('w-full') as tabs:
+    collection_tab = ui.tab('Collection')
+    settings_tab = ui.tab('Settings')
+
+with ui.tab_panels(tabs).classes('w-full p-4'):
+    with ui.tab_panel(collection_tab):
+        paginated_table()
+    with ui.tab_panel(settings_tab):
+        settings_page()
+
 get_full_count()
-coll = manager.fetch_collection()
 ui.run()
