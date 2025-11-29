@@ -25,6 +25,8 @@ table_data = {
 
 app_settings = manager.settings.copy()
 
+search_query = ''
+
 def save_settings():
     '''
     Callback function for save settings button.
@@ -152,7 +154,10 @@ def get_full_count():
     return count
 
 def do_pagination(request):
-    new_pagination = request.args['pagination']
+    if isinstance(request, dict):
+        new_pagination = request['args']['pagination']
+    else:
+        new_pagination = request.args['pagination']
 
     print(new_pagination)
 
@@ -172,11 +177,28 @@ def do_pagination(request):
         page=pagination['page'] - 1,
         page_size=pagination['rowsPerPage'],
         sort_by=pagination_sort,
-        desc=pagination_desc
+        desc=pagination_desc,
+        search_query=search_query
     )
+    print(search_query)
     table_data['rows'] = new_rows
     paginated_table.refresh()
 
+def search_callback(query):
+    global search_query
+    search_query = query.value
+    table_data['pagination']['page'] = 1
+    manual_request = {
+        'args': {
+            'pagination': {
+                'page': 1,  # First page
+                'rowsPerPage': table_data['pagination']['rowsPerPage'],
+                'sortBy': table_data['pagination'].get('sortBy', 'artist'),
+                'descending': table_data['pagination'].get('descending', False),
+            }
+        }
+    }
+    do_pagination(manual_request)
 # --- Main Page Layout ---
 
 with ui.header().classes('items-center justify-center bg-gray-900 text-white shadow-lg'):
@@ -188,6 +210,7 @@ with ui.tabs().classes('w-full') as tabs:
 
 with ui.tab_panels(tabs).classes('w-full p-4'):
     with ui.tab_panel(collection_tab):
+        ui.input('Search', on_change=search_callback).props('clearable rounded outlined dense')
         paginated_table()
     with ui.tab_panel(settings_tab):
         settings_page()
