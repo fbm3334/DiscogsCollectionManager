@@ -134,18 +134,26 @@ def paginated_table():
         {'name': 'title', 'label': 'Title', 'field': 'title', 'sortable': True},
         {'name': 'label_name', 'label': 'Label', 'field': 'label_name', 'sortable': True},
         {'name': 'catno', 'label': 'Cat No', 'field': 'catno', 'sortable': False},
+        {'name': 'genres', 'label': 'Genres', 'field': 'genres', 'sortable': True},
+        {'name': 'style_name', 'label': 'Styles', 'field': 'style_name', 'sortable': True},
+        {'name': 'catno', 'label': 'Cat No', 'field': 'catno', 'sortable': False},
         {'name': 'year', 'label': 'Year', 'field': 'year', 'sortable': True},
-        {'name': 'release_url', 'label': 'Release URL', 'field': 'release_url', 'sortable': False},
+        {'name': 'release_url', 'label': 'Discogs Link', 'field': 'release_url', 'sortable': False},
     ]
     table = ui.table(
         rows=table_data['rows'],
         title='Discogs Collection',
         columns=columns,
         pagination=table_data['pagination'],
-    )   
+        row_key='name'
+    )
+    table.add_slot('body-cell-release_url', '''
+        <q-td :props="props">
+            <u><a :href="props.value">Link</a></u>
+        </q-td>
+    ''')
     table.classes('w-full h-200 max-h-full virtual-scroll')
     table.on_select(lambda e: print(f'Selected rows: {e}'))
-    table.columns[6]['type'] = 'image'  # Set thumbnail column to image type
     table.on('request', do_pagination)
 
 def get_full_count():
@@ -180,6 +188,7 @@ def do_pagination(request):
         desc=pagination_desc,
         search_query=search_query
     )
+    print(new_rows)
     print(search_query)
     table_data['rows'] = new_rows
     paginated_table.refresh()

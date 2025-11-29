@@ -559,12 +559,13 @@ class DiscogsManager:
             a.name LIKE ? OR
             l.name LIKE ? OR
             rl.catno LIKE ?
+            s.name LIKE ?
         )
         '''
         # Parameters for the placeholders
         term = f"%{search_query}%"
         # Must repeat the term for each '?' in the WHERE clause
-        search_params = [term, term, term, term, term]
+        search_params = [term, term, term, term, term, term]
         
         return where_sql, search_params
 
@@ -588,6 +589,10 @@ class DiscogsManager:
         LEFT JOIN artists a ON ra.artist_id = a.id
         LEFT JOIN release_labels rl ON r.id = rl.release_id
         LEFT JOIN labels l ON rl.label_id = l.id
+        LEFT JOIN release_genres gs on r.id = gs.release_id
+        LEFT JOIN genres g on gs.genre_id = g.id
+        LEFT JOIN release_styles rs on r.id = rs.release_id
+        LEFT JOIN styles s on rs.style_id = s.id
         {where_sql}
         '''
         # Pass search_params to filter the count correctly
@@ -629,12 +634,18 @@ class DiscogsManager:
             REPLACE(GROUP_CONCAT(DISTINCT a.name), ',', ', ') as artist_name,
             r.title, 
             REPLACE(GROUP_CONCAT(DISTINCT l.name), ',', ', ') as label_name,
+            REPLACE(GROUP_CONCAT(DISTINCT g.name), ',', ', ') as genres,
+            REPLACE(GROUP_CONCAT(DISTINCT s.name), ',', ', ') as style_name,
             rl.catno, r.year, r.release_url
         FROM releases r
         LEFT JOIN release_artists ra ON r.id = ra.release_id
         LEFT JOIN artists a ON ra.artist_id = a.id
         LEFT JOIN release_labels rl ON r.id = rl.release_id
+        LEFT JOIN release_genres gs on r.id = gs.release_id
+        LEFT JOIN genres g on gs.genre_id = g.id
         LEFT JOIN labels l ON rl.label_id = l.id
+        LEFT JOIN release_styles rs on r.id = rs.release_id
+        LEFT JOIN styles s on rs.style_id = s.id
         {where_sql}
         GROUP BY r.id
         ORDER BY {order_clause}
