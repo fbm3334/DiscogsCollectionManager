@@ -141,7 +141,7 @@ def paginated_table():
         columns=columns,
         pagination=table_data['pagination'],
     )   
-    table.classes('w-full max-h-screen-75 overflow-auto')
+    table.classes('w-full h-200 max-h-full virtual-scroll')
     table.on_select(lambda e: print(f'Selected rows: {e}'))
     table.columns[6]['type'] = 'image'  # Set thumbnail column to image type
     table.on('request', do_pagination)
