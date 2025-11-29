@@ -127,12 +127,12 @@ def settings_page():
 @ui.refreshable
 def paginated_table():
     columns = [
-        {'name': 'id', 'label': 'ID', 'field': 'id', 'sortable': False},
-        {'name': 'artist_name', 'label': 'Artist', 'field': 'artist_name', 'sortable': False},
-        {'name': 'title', 'label': 'Title', 'field': 'title', 'sortable': False},
-        {'name': 'label_name', 'label': 'Label', 'field': 'label_name', 'sortable': False},
+        {'name': 'id', 'label': 'ID', 'field': 'id', 'sortable': True},
+        {'name': 'artist_name', 'label': 'Artist', 'field': 'artist_name', 'sortable': True},
+        {'name': 'title', 'label': 'Title', 'field': 'title', 'sortable': True},
+        {'name': 'label_name', 'label': 'Label', 'field': 'label_name', 'sortable': True},
         {'name': 'catno', 'label': 'Cat No', 'field': 'catno', 'sortable': False},
-        {'name': 'year', 'label': 'Year', 'field': 'year', 'sortable': False},
+        {'name': 'year', 'label': 'Year', 'field': 'year', 'sortable': True},
         {'name': 'release_url', 'label': 'Release URL', 'field': 'release_url', 'sortable': False},
     ]
     table = ui.table(
@@ -152,21 +152,30 @@ def get_full_count():
     return count
 
 def do_pagination(request):
-    print(request)
     new_pagination = request.args['pagination']
+
+    print(new_pagination)
+
     pagination = table_data['pagination']
     pagination.update(new_pagination)
+    pagination_sort = new_pagination.get('sortBy', 'artist')
+
+    pagination_sort = 'artist' if pagination_sort == 'artist_name' else pagination_sort
+
+    pagination_desc = new_pagination.get('descending', False)
+
+    if pagination_sort is None:
+        pagination_sort = 'artist'
+        pagination_desc = False
+
     new_rows, _ = manager.get_releases_paginated(
         page=pagination['page'] - 1,
         page_size=pagination['rowsPerPage'],
-        sort_by='artist',
-        desc=False
+        sort_by=pagination_sort,
+        desc=pagination_desc
     )
-    print(new_rows)
-
     table_data['rows'] = new_rows
     paginated_table.refresh()
-    print('TEST')
 
 # --- Main Page Layout ---
 
