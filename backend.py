@@ -31,6 +31,7 @@ class PaginatedReleaseRequest:
     genre_ids: list[int] | None = None
     style_ids: list[int] | None = None
     label_ids: list[int] | None = None
+    formats: list[str] | None = None
 
 class DiscogsManager:
     '''
@@ -519,7 +520,8 @@ class DiscogsManager:
             request.artist_ids,
             request.genre_ids,
             request.style_ids,
-            request.label_ids,)
+            request.label_ids,
+            request.formats)
 
         # 2. Prepare Pagination
         offset = request.page * request.page_size
@@ -565,7 +567,7 @@ class DiscogsManager:
         else:
             return f"r.{sort_by} {order_dir}"
 
-    def _build_where_clause(self, search_query: str, artist_ids: list[int] | None, genre_ids: list[int] | None, style_ids: list[int] | None, label_ids: list[int] | None) -> tuple[str, list]:
+    def _build_where_clause(self, search_query: str, artist_ids: list[int] | None, genre_ids: list[int] | None, style_ids: list[int] | None, label_ids: list[int] | None, formats: list[str] | None) -> tuple[str, list]:
         '''
         Constructs the SQL WHERE clause and prepares search parameters, now including Genre, Style, and Label filters.
         '''
@@ -639,6 +641,13 @@ class DiscogsManager:
             """
             conditions.append(label_condition)
             search_params.extend(label_ids)
+
+        if formats:
+            # The format is a column in the main 'releases' table
+            placeholders = ', '.join(['?'] * len(formats))
+            format_condition = f"r.format IN ({placeholders})"
+            conditions.append(format_condition)
+            search_params.extend(formats) # Pass the format strings as parameters
         
         if not conditions:
             return "", []
@@ -911,3 +920,23 @@ class DiscogsManager:
 
             # Extract the 'id' from the row if it exists.
             return row['id'] if row else None
+        
+    def get_unique_formats(self) -> list[str]:
+        '''
+        Fetches all unique formats from the releases table in the DB.
+        
+        :returns: List of unique format strings.
+        :rtype: list[str]
+        '''
+        with self.get_db_connection() as conn:
+            query = '''
+            SELECT DISTINCT
+                format
+            FROM releases
+            WHERE format IS NOT NULL AND format != ''
+            ORDER BY format ASC;
+            '''
+            cursor = conn.execute(query)
+            # fetchall() returns a list of Row objects (which behave like tuples).
+            # We use a list comprehension to extract the first (and only) column value (the format string).
+            return [row[0] for row in cursor.fetchall()]

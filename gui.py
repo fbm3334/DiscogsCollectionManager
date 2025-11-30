@@ -63,10 +63,13 @@ class DiscogsSorterGui:
         for label in self.label_dict:
             self.label_list.append(label.get('name', ''))
 
+        self.format_list = self.manager.get_unique_formats()
+
         self.artist_filter_ids = None
         self.genre_filter_ids = None
         self.style_filter_ids = None
         self.label_filter_ids = None
+        self.format_selected_list = None
         self.build_ui()
 
     def get_columns(self) -> List[Dict[str, Any]]:
@@ -144,7 +147,8 @@ class DiscogsSorterGui:
             artist_ids=self.artist_filter_ids,
             genre_ids=self.genre_filter_ids,
             style_ids=self.style_filter_ids,
-            label_ids=self.label_filter_ids
+            label_ids=self.label_filter_ids,
+            formats=self.format_selected_list
         )
         print('Request update!', request)
         new_rows, count = self.manager.get_releases_paginated(
@@ -263,6 +267,24 @@ class DiscogsSorterGui:
         else:
             self.label_filter_ids = id_list
 
+    def format_select_callback(self, query):
+        '''
+        Callback function for format selection.
+
+        :param query: Style selection query.
+        '''
+        format_list = query.value
+        temp_format_list = []
+        
+        for format_sel in format_list:
+            temp_format_list.append(format_sel)
+
+        print(temp_format_list)
+        if len(temp_format_list) < 1:
+            self.format_selected_list = None
+        else:
+            self.format_selected_list = temp_format_list
+
         self._send_manual_pagination_request()
 
     @ui.refreshable
@@ -318,6 +340,11 @@ class DiscogsSorterGui:
                 self.label_list, multiple=True, label='Label Filter',
                 with_input=True, on_change=self.label_select_callback
                 ).classes('w-70').props('use-chips')
+            
+            ui.select(
+                self.format_list, multiple=True, label='Format Filter',
+                with_input=True, on_change=self.format_select_callback
+                ).classes('w-70').props('use-chips')
 
         self.get_full_count()
 
@@ -327,8 +354,9 @@ if __name__ in {"__main__", "__mp_main__"}:
 
     def _background_fetch():
         try:
-            dm.fetch_collection()
-            dm.fetch_artist_sort_names()
+            pass
+            #dm.fetch_collection()
+            #dm.fetch_artist_sort_names()
         except Exception as e:
             print('Background fetch error:', e)
 
