@@ -558,7 +558,7 @@ class DiscogsManager:
             r.year LIKE ? OR
             a.name LIKE ? OR
             l.name LIKE ? OR
-            rl.catno LIKE ?
+            rl.catno LIKE ? OR
             s.name LIKE ?
         )
         '''

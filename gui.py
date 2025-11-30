@@ -5,13 +5,6 @@ from typing import List, Dict, Any, AnyStr
 from backend import DiscogsManager
 
 
-
-
-
-
-search_query = ''
-
-
 class DiscogsSorterGui:
     '''
     Discogs sorter GUI frontend class.
@@ -55,12 +48,18 @@ class DiscogsSorterGui:
         '''
         return [
             {'name': 'id', 'label': 'ID', 'field': 'id', 'sortable': True},
-            {'name': 'artist_name', 'label': 'Artist', 'field': 'artist_name', 'sortable': True},
-            {'name': 'title', 'label': 'Title', 'field': 'title', 'sortable': True},
-            {'name': 'label_name', 'label': 'Label', 'field': 'label_name', 'sortable': True},
-            {'name': 'catno', 'label': 'Cat No', 'field': 'catno', 'sortable': False},
-            {'name': 'genres', 'label': 'Genres', 'field': 'genres', 'sortable': True},
-            {'name': 'style_name', 'label': 'Styles', 'field': 'style_name', 'sortable': True},
+            {'name': 'artist_name', 'label': 'Artist', 'field': 'artist_name', 'sortable': True, 
+             'style': 'text-wrap: wrap'},
+            {'name': 'title', 'label': 'Title', 'field': 'title', 'sortable': True, 
+             'style': 'text-wrap: wrap'},
+            {'name': 'label_name', 'label': 'Label', 'field': 'label_name', 'sortable': True, 
+             'style': 'text-wrap: wrap'},
+            {'name': 'catno', 'label': 'Cat No', 'field': 'catno', 'sortable': False, 
+             'style': 'text-wrap: wrap'},
+            {'name': 'genres', 'label': 'Genres', 'field': 'genres', 'sortable': True, 
+             'style': 'text-wrap: wrap'},
+            {'name': 'style_name', 'label': 'Styles', 'field': 'style_name', 'sortable': True, 
+             'style': 'text-wrap: wrap'},
             {'name': 'year', 'label': 'Year', 'field': 'year', 'sortable': True},
             {'name': 'release_url', 'label': 'Discogs Link', 'field': 'release_url', 'sortable': False},
         ]
@@ -84,13 +83,10 @@ class DiscogsSorterGui:
 
         :param request: Request for table
         '''
-        print('Pagination!')
         if isinstance(request, dict):
             new_pagination = request['args']['pagination']
         else:
             new_pagination = request.args['pagination']
-
-        print(new_pagination)
 
         pagination = self.table_data['pagination']
         pagination.update(new_pagination)
@@ -109,8 +105,9 @@ class DiscogsSorterGui:
             page_size=pagination['rowsPerPage'],
             sort_by=pagination_sort,
             desc=pagination_desc,
-            search_query=search_query
+            search_query=self.search_query
         )
+        ui.notify(f'Query = {self.search_query}')
 
         self.table_data['rows'] = new_rows
         self.paginated_table.refresh()
@@ -175,5 +172,6 @@ class DiscogsSorterGui:
         self.get_full_count()
 
 if __name__ in {"__main__", "__mp_main__"}:
-    DiscogsSorterGui()
+    gui = DiscogsSorterGui()
+    gui.build_ui()
     ui.run()
