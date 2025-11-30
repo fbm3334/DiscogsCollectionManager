@@ -107,7 +107,6 @@ class DiscogsSorterGui:
             desc=pagination_desc,
             search_query=self.search_query
         )
-        ui.notify(f'Query = {self.search_query}')
 
         self.table_data['rows'] = new_rows
         self.paginated_table.refresh()
@@ -173,5 +172,4 @@ class DiscogsSorterGui:
 
 if __name__ in {"__main__", "__mp_main__"}:
     gui = DiscogsSorterGui()
-    gui.build_ui()
     ui.run()
