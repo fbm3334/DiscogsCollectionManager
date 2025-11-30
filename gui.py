@@ -44,7 +44,25 @@ class DiscogsSorterGui:
         for artist in self.artist_dict:
             self.artist_list.append(artist.get('name', ''))
 
+        self.genre_dict = self.manager.get_all_genres()
+        self.genre_list = []
+        for genre in self.genre_dict:
+            self.genre_list.append(genre.get('name', ''))
+
+        self.style_dict = self.manager.get_all_styles()
+        self.style_list = []
+        for style in self.style_dict:
+            self.style_list.append(style.get('name', ''))
+
+        self.label_dict = self.manager.get_all_labels()
+        self.label_list = []
+        for label in self.label_dict:
+            self.label_list.append(label.get('name', ''))
+
         self.artist_filter_ids = None
+        self.genre_filter_ids = None
+        self.style_filter_ids = None
+        self.label_filter_ids = None
         self.build_ui()
 
     def get_columns(self) -> List[Dict[str, Any]]:
@@ -118,8 +136,12 @@ class DiscogsSorterGui:
             sort_by=pagination_sort,
             desc=pagination_desc,
             search_query=self.search_query,
-            artist_ids=self.artist_filter_ids
+            artist_ids=self.artist_filter_ids,
+            genre_ids=self.genre_filter_ids,
+            style_ids=self.style_filter_ids,
+            label_ids=self.label_filter_ids
         )
+        print('Request update!', request)
         new_rows, count = self.manager.get_releases_paginated(
             request
         )
@@ -129,13 +151,10 @@ class DiscogsSorterGui:
         self.table_data['rows'] = new_rows
         self.paginated_table.refresh()
 
-    def search_callback(self, query):
+    def _send_manual_pagination_request(self):
         '''
-        Search callback function when the search box is updated.
-
-        :param query: Search query
+        Send a manual pagination request.
         '''
-        self.search_query = query.value
         self.table_data['pagination']['page'] = 1
         manual_request = {
             'args': {
@@ -149,12 +168,22 @@ class DiscogsSorterGui:
         }
         self.do_pagination(manual_request)
 
+    def search_callback(self, query):
+        '''
+        Search callback function when the search box is updated.
+
+        :param query: Search query
+        '''
+        self.search_query = query.value
+        self._send_manual_pagination_request()
+
     def artist_select_callback(self, query):
         '''
         Callback function for artist selection.
 
         :param query: Artist selection query.
         '''
+        
         name_list = query.value
         id_list = []
         
@@ -166,19 +195,70 @@ class DiscogsSorterGui:
             self.artist_filter_ids = None
         else:
             self.artist_filter_ids = id_list
+            print(self.artist_filter_ids)
 
-        self.table_data['pagination']['page'] = 1
-        manual_request = {
-            'args': {
-                'pagination': {
-                    'page': 1,  # First page
-                    'rowsPerPage': self.table_data['pagination']['rowsPerPage'],
-                    'sortBy': self.table_data['pagination'].get('sortBy', 'artist'),
-                    'descending': self.table_data['pagination'].get('descending', False),
-                }
-            }
-        }
-        self.do_pagination(manual_request)
+        self._send_manual_pagination_request()
+        
+
+    def genre_select_callback(self, query):
+        '''
+        Callback function for genre selection.
+
+        :param query: Genre selection query.
+        '''
+        genre_list = query.value
+        id_list = []
+        
+        for genre in genre_list:
+            id_list.append(self.manager.get_genre_id_by_name(genre))
+
+        
+        if len(id_list) < 1:
+            self.genre_filter_ids = None
+        else:
+            self.genre_filter_ids = id_list
+
+        self._send_manual_pagination_request()
+
+    def style_select_callback(self, query):
+        '''
+        Callback function for style selection.
+
+        :param query: Style selection query.
+        '''
+        style_list = query.value
+        id_list = []
+        
+        for style in style_list:
+            id_list.append(self.manager.get_style_id_by_name(style))
+
+        
+        if len(id_list) < 1:
+            self.style_filter_ids = None
+        else:
+            self.style_filter_ids = id_list
+
+        self._send_manual_pagination_request()
+
+    def label_select_callback(self, query):
+        '''
+        Callback function for label selection.
+
+        :param query: Style selection query.
+        '''
+        label_list = query.value
+        id_list = []
+        
+        for label in label_list:
+            id_list.append(self.manager.get_label_id_by_name(label))
+
+        print(id_list)
+        if len(id_list) < 1:
+            self.label_filter_ids = None
+        else:
+            self.label_filter_ids = id_list
+
+        self._send_manual_pagination_request()
 
     @ui.refreshable
     def paginated_table(self):
@@ -218,6 +298,20 @@ class DiscogsSorterGui:
             ui.select(
                 self.artist_list, multiple=True, label='Artist Filter',
                 with_input=True, on_change=self.artist_select_callback
+                ).classes('w-70').props('use-chips')
+            ui.select(
+                self.genre_list, multiple=True, label='Genre Filter',
+                with_input=True, on_change=self.genre_select_callback
+                ).classes('w-70').props('use-chips')
+            
+            ui.select(
+                self.style_list, multiple=True, label='Style Filter',
+                with_input=True, on_change=self.style_select_callback
+                ).classes('w-70').props('use-chips')
+            
+            ui.select(
+                self.label_list, multiple=True, label='Label Filter',
+                with_input=True, on_change=self.label_select_callback
                 ).classes('w-70').props('use-chips')
 
         self.get_full_count()

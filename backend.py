@@ -511,7 +511,12 @@ class DiscogsManager:
         '''
         # 1. Prepare SQL Components
         order_clause = self._build_order_clause(request.sort_by, request.desc)
-        where_sql, search_params = self._build_where_clause(request.search_query, request.artist_ids)
+        where_sql, search_params = self._build_where_clause(
+            request.search_query,
+            request.artist_ids,
+            request.genre_ids,
+            request.style_ids,
+            request.label_ids)
 
         # 2. Prepare Pagination
         offset = request.page * request.page_size
@@ -557,14 +562,9 @@ class DiscogsManager:
         else:
             return f"r.{sort_by} {order_dir}"
 
-    def _build_where_clause(self, search_query: str, artist_ids = list[int] | None) -> tuple[str, list]:
+    def _build_where_clause(self, search_query: str, artist_ids: list[int] | None, genre_ids: list[int] | None, style_ids: list[int] | None, label_ids: list[int] | None) -> tuple[str, list]:
         '''
-        Constructs the SQL WHERE clause and prepares search parameters.
-
-        :param search_query: The text to search for.
-        :type search_query: str
-        :returns: A tuple containing the WHERE SQL fragment and the list of parameters.
-        :rtype: tuple[str, list]
+        Constructs the SQL WHERE clause and prepares search parameters, now including Genre, Style, and Label filters.
         '''
         conditions = []
         search_params = []
@@ -589,18 +589,58 @@ class DiscogsManager:
         if artist_ids:
             # Create a string of placeholders for the IN clause: '?, ?, ?'
             placeholders = ', '.join(['?'] * len(artist_ids))
-            
+
             # Use 'a.id IN (...)' to filter by any of the selected artist IDs
             artist_condition = f'a.id IN ({placeholders})'
             conditions.append(artist_condition)
             
             # The list of artist_ids are the parameters for the IN clause
             search_params.extend(artist_ids)
+            
+        if genre_ids:
+            placeholders = ', '.join(['?'] * len(genre_ids))
+            
+            # Use a subquery to find releases associated with the selected genres.
+            # We use GROUP BY and COUNT to ensure the release matches ALL selected genres 
+            # if that were the requirement, but typically it's OR logic (match ANY selected genre).
+            # We use a simpler EXISTS/IN here for OR logic within the group.
+            genre_condition = f"""
+            r.id IN (
+                SELECT release_id FROM release_genres 
+                WHERE genre_id IN ({placeholders})
+            )
+            """
+            conditions.append(genre_condition)
+            search_params.extend(genre_ids)
+
+        # 4. Multiple Style Filter (NEW)
+        if style_ids:
+            placeholders = ', '.join(['?'] * len(style_ids))
+            style_condition = f"""
+            r.id IN (
+                SELECT release_id FROM release_styles 
+                WHERE style_id IN ({placeholders})
+            )
+            """
+            conditions.append(style_condition)
+            search_params.extend(style_ids)
+
+        # 5. Multiple Label Filter (NEW)
+        if label_ids:
+            placeholders = ', '.join(['?'] * len(label_ids))
+            label_condition = f"""
+            r.id IN (
+                SELECT release_id FROM release_labels 
+                WHERE label_id IN ({placeholders})
+            )
+            """
+            conditions.append(label_condition)
+            search_params.extend(label_ids)
         
         if not conditions:
             return "", []
 
-        # Combine all conditions with AND
+        # Combine all conditions with AND (AND logic between filter groups: Genre AND Style AND Label)
         where_sql = 'WHERE ' + ' AND '.join(conditions)
         
         return where_sql, search_params
@@ -726,6 +766,141 @@ class DiscogsManager:
             # Pass the artist_name as a tuple to the execute method.
             # This safely substitutes the '?' placeholder.
             cursor = conn.execute(query, (artist_name,))
+
+            # Fetch the first (and only expected) result.
+            # fetchone() returns a single Row object or None.
+            row = cursor.fetchone()
+
+            # Extract the 'id' from the row if it exists.
+            return row['id'] if row else None
+        
+    def get_all_genres(self):
+        '''
+        Fetches all unique genres from the DB.
+        
+        :returns: List of dictionaries with 'id' and 'name'.
+        :rtype: list[dict]
+        '''
+        with self.get_db_connection() as conn:
+            query = '''
+            SELECT 
+                id, 
+                name
+            FROM genres
+            ORDER BY id;
+            '''
+            cursor = conn.execute(query)
+            # Use dict() to convert Row objects to dictionaries for easier consumption
+            return [dict(row) for row in cursor.fetchall()]
+        
+    def get_genre_id_by_name(self,genre: str) -> int | None:
+        '''
+        Fetches the ID of a genre given its exact name.
+
+        :param genre: The name of the genre to search for.
+        :returns: The integer ID of the genre, or None if not found.
+        :rtype: int | None
+        '''
+        with self.get_db_connection() as conn:
+            query = '''
+            SELECT
+                id
+            FROM genres
+            WHERE name = ?;
+            '''
+            # Pass the artist_name as a tuple to the execute method.
+            # This safely substitutes the '?' placeholder.
+            cursor = conn.execute(query, (genre,))
+
+            # Fetch the first (and only expected) result.
+            # fetchone() returns a single Row object or None.
+            row = cursor.fetchone()
+
+            # Extract the 'id' from the row if it exists.
+            return row['id'] if row else None
+        
+    def get_all_styles(self):
+        '''
+        Fetches all unique styles from the DB.
+        
+        :returns: List of dictionaries with 'id' and 'name'.
+        :rtype: list[dict]
+        '''
+        with self.get_db_connection() as conn:
+            query = '''
+            SELECT 
+                id, 
+                name
+            FROM styles
+            ORDER BY name;
+            '''
+            cursor = conn.execute(query)
+            # Use dict() to convert Row objects to dictionaries for easier consumption
+            return [dict(row) for row in cursor.fetchall()]
+        
+    def get_style_id_by_name(self, style: str) -> int | None:
+        '''
+        Fetches the ID of a style given its exact name.
+
+        :param style: The name of the style to search for.
+        :returns: The integer ID of the style, or None if not found.
+        :rtype: int | None
+        '''
+        with self.get_db_connection() as conn:
+            query = '''
+            SELECT
+                id
+            FROM styles
+            WHERE name = ?;
+            '''
+            # Pass the artist_name as a tuple to the execute method.
+            # This safely substitutes the '?' placeholder.
+            cursor = conn.execute(query, (style,))
+
+            # Fetch the first (and only expected) result.
+            # fetchone() returns a single Row object or None.
+            row = cursor.fetchone()
+
+            # Extract the 'id' from the row if it exists.
+            return row['id'] if row else None
+        
+    def get_all_labels(self):
+        '''
+        Fetches all unique labels from the DB.
+        
+        :returns: List of dictionaries with 'id' and 'name'.
+        :rtype: list[dict]
+        '''
+        with self.get_db_connection() as conn:
+            query = '''
+            SELECT 
+                id, 
+                name
+            FROM labels
+            ORDER BY name;
+            '''
+            cursor = conn.execute(query)
+            # Use dict() to convert Row objects to dictionaries for easier consumption
+            return [dict(row) for row in cursor.fetchall()]
+        
+    def get_label_id_by_name(self, label: str) -> int | None:
+        '''
+        Fetches the ID of a style given its exact name.
+
+        :param label: The name of the label to search for.
+        :returns: The integer ID of the label, or None if not found.
+        :rtype: int | None
+        '''
+        with self.get_db_connection() as conn:
+            query = '''
+            SELECT
+                id
+            FROM labels
+            WHERE name = ?;
+            '''
+            # Pass the artist_name as a tuple to the execute method.
+            # This safely substitutes the '?' placeholder.
+            cursor = conn.execute(query, (label,))
 
             # Fetch the first (and only expected) result.
             # fetchone() returns a single Row object or None.
