@@ -2,7 +2,7 @@ from nicegui import ui, run
 import yaml
 from typing import List, Dict, Any, AnyStr
 
-from backend import DiscogsManager
+from backend import DiscogsManager, PaginatedReleaseRequest
 
 
 class DiscogsSorterGui:
@@ -20,11 +20,14 @@ class DiscogsSorterGui:
         self.search_query = ''
 
         # Fetch initial releases
-        self.releases, self.num_releases = self.manager.get_releases_paginated(
+        initial_request = PaginatedReleaseRequest(
             page=0,
             page_size=20,
             sort_by='artist',
             desc=False
+        )
+        self.releases, self.num_releases = self.manager.get_releases_paginated(
+            request=initial_request
         )
 
         # Table code inspired by https://github.com/zauberzeug/nicegui/discussions/1903#discussioncomment-8251437
@@ -77,7 +80,11 @@ class DiscogsSorterGui:
         :return: Count of releases.
         :rtype: int
         '''
-        _, count = self.manager.get_releases_paginated(page=0, page_size=1)
+        request = PaginatedReleaseRequest(
+            page=0,
+            page_size=1
+        )
+        _, count = self.manager.get_releases_paginated(request)
         self.table_data['pagination']['rowsNumber'] = count
         return count
     
@@ -105,14 +112,19 @@ class DiscogsSorterGui:
             pagination_sort = 'artist'
             pagination_desc = False
 
-        new_rows, _ = self.manager.get_releases_paginated(
+        request = PaginatedReleaseRequest(
             page=pagination['page'] - 1,
             page_size=pagination['rowsPerPage'],
             sort_by=pagination_sort,
             desc=pagination_desc,
             search_query=self.search_query,
-            artist_id=self.artist_filter_ids
+            artist_ids=self.artist_filter_ids
         )
+        new_rows, count = self.manager.get_releases_paginated(
+            request
+        )
+
+        self.table_data['pagination']['rowsNumber'] = count
 
         self.table_data['rows'] = new_rows
         self.paginated_table.refresh()

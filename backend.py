@@ -8,6 +8,7 @@ import os
 import sqlite3
 import re
 from contextlib import contextmanager
+from dataclasses import dataclass
 
 import pandas as pd
 import discogs_client as dc
@@ -15,6 +16,21 @@ import yaml
 
 CLIENT_NAME = 'FBM3334Client/0.2-SQLite'
 REGEX_STRING = r'^\s*(?:the|a|el|la|los|las|un|una|le|la|les|un|une|il|lo|la|gli|le|ein|eine)\s+'
+
+@dataclass
+class PaginatedReleaseRequest:
+    '''
+    Paginated release request class.
+    '''
+    page: int = 0
+    page_size: int = 10
+    sort_by: str = 'artist'
+    desc: bool = True
+    search_query: str = ""
+    artist_ids: list[int] | None = None
+    genre_ids: list[int] | None = None
+    style_ids: list[int] | None = None
+    label_ids: list[int] | None = None
 
 class DiscogsManager:
     '''
@@ -476,7 +492,7 @@ class DiscogsManager:
             os.remove(db_path)
             print("Database cleared.")
 
-    def get_releases_paginated(self, page: int = 0, page_size: int = 10, sort_by: str = 'date_added', desc: bool = True, search_query: str = "", artist_id: list[int] | None = None):
+    def get_releases_paginated(self, request: PaginatedReleaseRequest):
         '''
         Coordinates fetching releases with full support for search, sorting, and pagination.
 
@@ -494,18 +510,20 @@ class DiscogsManager:
         :rtype: tuple[list, int]
         '''
         # 1. Prepare SQL Components
-        order_clause = self._build_order_clause(sort_by, desc)
-        where_sql, search_params = self._build_where_clause(search_query, artist_id)
+        order_clause = self._build_order_clause(request.sort_by, request.desc)
+        where_sql, search_params = self._build_where_clause(request.search_query, request.artist_ids)
 
         # 2. Prepare Pagination
-        offset = page * page_size
+        offset = request.page * request.page_size
 
         with self.get_db_connection() as conn:
             # 3. Get Total Count
             total_rows = self._get_filtered_count(conn, where_sql, search_params)
 
             # 4. Handle 'Fetch All' and Finalize Pagination Params
-            limit, final_offset = self._get_pagination_limits(page_size, total_rows, offset)
+            limit, final_offset = self._get_pagination_limits(
+                request.page_size, total_rows, offset
+                )
             full_params = search_params + [limit, final_offset]
 
             # 5. Fetch Data
