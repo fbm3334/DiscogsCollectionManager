@@ -36,7 +36,12 @@ class DiscogsSorterGui:
                 'rowsNumber': self.num_releases,
             },
         }
+        self.artist_dict = self.manager.get_all_artists()
+        self.artist_list = []
+        for artist in self.artist_dict:
+            self.artist_list.append(artist.get('name', ''))
 
+        self.artist_filter_ids = None
         self.build_ui()
 
     def get_columns(self) -> List[Dict[str, Any]]:
@@ -105,7 +110,8 @@ class DiscogsSorterGui:
             page_size=pagination['rowsPerPage'],
             sort_by=pagination_sort,
             desc=pagination_desc,
-            search_query=self.search_query
+            search_query=self.search_query,
+            artist_id=self.artist_filter_ids
         )
 
         self.table_data['rows'] = new_rows
@@ -118,6 +124,37 @@ class DiscogsSorterGui:
         :param query: Search query
         '''
         self.search_query = query.value
+        self.table_data['pagination']['page'] = 1
+        manual_request = {
+            'args': {
+                'pagination': {
+                    'page': 1,  # First page
+                    'rowsPerPage': self.table_data['pagination']['rowsPerPage'],
+                    'sortBy': self.table_data['pagination'].get('sortBy', 'artist'),
+                    'descending': self.table_data['pagination'].get('descending', False),
+                }
+            }
+        }
+        self.do_pagination(manual_request)
+
+    def artist_select_callback(self, query):
+        '''
+        Callback function for artist selection.
+
+        :param query: Artist selection query.
+        '''
+        name_list = query.value
+        id_list = []
+        
+        for name in name_list:
+            id_list.append(self.manager.get_artist_id_by_name(name))
+
+        
+        if len(id_list) < 1:
+            self.artist_filter_ids = None
+        else:
+            self.artist_filter_ids = id_list
+
         self.table_data['pagination']['page'] = 1
         manual_request = {
             'args': {
@@ -159,14 +196,17 @@ class DiscogsSorterGui:
         ui.input('Search', on_change=self.search_callback).props('clearable rounded outlined dense')
         self.paginated_table()
 
-        with ui.header().classes('items-center justify-between bg-gray-900 text-white shadow-lg'):
+        with ui.header(elevated=True).classes('items-center justify-between bg-gray-900 text-white shadow-lg'):
             ui.button(on_click=lambda: left_drawer.toggle(), icon='menu')
             ui.label('Discogs Manager Dashboard').classes('text-3xl font-extrabold')
             dark = ui.dark_mode()
             ui.switch('Dark mode').bind_value(dark)
             
         with ui.left_drawer(top_corner=False, bottom_corner=True) as left_drawer:
-            ui.label('Left Drawer')
+            ui.select(
+                self.artist_list, multiple=True, label='Artist Filter',
+                with_input=True, on_change=self.artist_select_callback
+                ).classes('w-70').props('use-chips')
 
         self.get_full_count()
 

@@ -476,7 +476,7 @@ class DiscogsManager:
             os.remove(db_path)
             print("Database cleared.")
 
-    def get_releases_paginated(self, page: int = 0, page_size: int = 10, sort_by: str = 'date_added', desc: bool = True, search_query: str = ""):
+    def get_releases_paginated(self, page: int = 0, page_size: int = 10, sort_by: str = 'date_added', desc: bool = True, search_query: str = "", artist_id: list[int] | None = None):
         '''
         Coordinates fetching releases with full support for search, sorting, and pagination.
 
@@ -495,7 +495,7 @@ class DiscogsManager:
         '''
         # 1. Prepare SQL Components
         order_clause = self._build_order_clause(sort_by, desc)
-        where_sql, search_params = self._build_where_clause(search_query)
+        where_sql, search_params = self._build_where_clause(search_query, artist_id)
 
         # 2. Prepare Pagination
         offset = page * page_size
@@ -539,7 +539,7 @@ class DiscogsManager:
         else:
             return f"r.{sort_by} {order_dir}"
 
-    def _build_where_clause(self, search_query: str) -> tuple[str, list]:
+    def _build_where_clause(self, search_query: str, artist_ids = list[int] | None) -> tuple[str, list]:
         '''
         Constructs the SQL WHERE clause and prepares search parameters.
 
@@ -548,24 +548,42 @@ class DiscogsManager:
         :returns: A tuple containing the WHERE SQL fragment and the list of parameters.
         :rtype: tuple[str, list]
         '''
-        if not search_query:
+        conditions = []
+        search_params = []
+        
+        # 1. General Search Query (UNCHANGED)
+        if search_query:
+            search_condition = '''
+            (
+                r.title LIKE ? OR
+                r.year LIKE ? OR
+                a.name LIKE ? OR
+                l.name LIKE ? OR
+                rl.catno LIKE ? OR
+                s.name LIKE ?
+            )
+            '''
+            conditions.append(search_condition)
+            term = f"%{search_query}%"
+            search_params.extend([term, term, term, term, term, term])
+            
+        # 2. Multiple Artist Filter (MODIFIED)
+        if artist_ids:
+            # Create a string of placeholders for the IN clause: '?, ?, ?'
+            placeholders = ', '.join(['?'] * len(artist_ids))
+            
+            # Use 'a.id IN (...)' to filter by any of the selected artist IDs
+            artist_condition = f'a.id IN ({placeholders})'
+            conditions.append(artist_condition)
+            
+            # The list of artist_ids are the parameters for the IN clause
+            search_params.extend(artist_ids)
+        
+        if not conditions:
             return "", []
 
-        # SQL fragment for multi-field search
-        where_sql = '''
-        WHERE (
-            r.title LIKE ? OR
-            r.year LIKE ? OR
-            a.name LIKE ? OR
-            l.name LIKE ? OR
-            rl.catno LIKE ? OR
-            s.name LIKE ?
-        )
-        '''
-        # Parameters for the placeholders
-        term = f"%{search_query}%"
-        # Must repeat the term for each '?' in the WHERE clause
-        search_params = [term, term, term, term, term, term]
+        # Combine all conditions with AND
+        where_sql = 'WHERE ' + ' AND '.join(conditions)
         
         return where_sql, search_params
 
@@ -651,3 +669,49 @@ class DiscogsManager:
         ORDER BY {order_clause}
         LIMIT ? OFFSET ?
         '''
+    
+    def get_all_artists(self):
+        '''
+        Fetches all unique artists from the DB, sorted by sort_name.
+        
+        :returns: List of dictionaries with 'id', 'name', and 'sort_name'.
+        :rtype: list[dict]
+        '''
+        with self.get_db_connection() as conn:
+            query = '''
+            SELECT 
+                id, 
+                name, 
+                COALESCE(sort_name, name) AS sort_name_for_order
+            FROM artists
+            ORDER BY sort_name_for_order COLLATE NOCASE ASC;
+            '''
+            cursor = conn.execute(query)
+            # Use dict() to convert Row objects to dictionaries for easier consumption
+            return [dict(row) for row in cursor.fetchall()]
+        
+    def get_artist_id_by_name(self, artist_name: str) -> int | None:
+        '''
+        Fetches the ID of an artist given their exact name.
+
+        :param artist_name: The name of the artist to search for.
+        :returns: The integer ID of the artist, or None if not found.
+        :rtype: int | None
+        '''
+        with self.get_db_connection() as conn:
+            query = '''
+            SELECT
+                id
+            FROM artists
+            WHERE name = ?;
+            '''
+            # Pass the artist_name as a tuple to the execute method.
+            # This safely substitutes the '?' placeholder.
+            cursor = conn.execute(query, (artist_name,))
+
+            # Fetch the first (and only expected) result.
+            # fetchone() returns a single Row object or None.
+            row = cursor.fetchone()
+
+            # Extract the 'id' from the row if it exists.
+            return row['id'] if row else None
