@@ -137,6 +137,8 @@ class DiscogsSorterGui:
         if pagination_sort is None:
             pagination_sort = 'artist'
             pagination_desc = False
+        
+        print('Filtr ID', self.label_filter_ids)
 
         request = PaginatedReleaseRequest(
             page=pagination['page'] - 1,
@@ -266,6 +268,8 @@ class DiscogsSorterGui:
             self.label_filter_ids = None
         else:
             self.label_filter_ids = id_list
+
+        self._send_manual_pagination_request()
 
     def format_select_callback(self, query):
         '''
