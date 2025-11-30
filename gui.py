@@ -8,8 +8,6 @@ manager = DiscogsManager()
 INITIAL_PAGE_SIZE = 20
 INITIAL_PAGE = 0
 
-dark = ui.dark_mode()
-dark.set_value(None) # Use system preference
 
 releases, num_releases = manager.get_releases_paginated(page=0, page_size=20, sort_by='artist', desc=False)
 # Table code inspired by https://github.com/zauberzeug/nicegui/discussions/1903#discussioncomment-8251437
@@ -210,19 +208,22 @@ def search_callback(query):
     do_pagination(manual_request)
 # --- Main Page Layout ---
 
-with ui.header().classes('items-center justify-center bg-gray-900 text-white shadow-lg'):
+
+
+
+
+ui.input('Search', on_change=search_callback).props('clearable rounded outlined dense')
+paginated_table()
+
+with ui.header().classes('items-center justify-between bg-gray-900 text-white shadow-lg'):
+    ui.button(on_click=lambda: left_drawer.toggle(), icon='menu')
     ui.label('Discogs Manager Dashboard').classes('text-3xl font-extrabold')
+    dark = ui.dark_mode()
+    ui.switch('Dark mode').bind_value(dark)
+    
+with ui.left_drawer(top_corner=False, bottom_corner=True) as left_drawer:
+    ui.label('Left Drawer')
 
-with ui.tabs().classes('w-full') as tabs:
-    collection_tab = ui.tab('Collection')
-    settings_tab = ui.tab('Settings')
-
-with ui.tab_panels(tabs).classes('w-full p-4'):
-    with ui.tab_panel(collection_tab):
-        ui.input('Search', on_change=search_callback).props('clearable rounded outlined dense')
-        paginated_table()
-    with ui.tab_panel(settings_tab):
-        settings_page()
 
 get_full_count()
 ui.run()
