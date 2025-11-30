@@ -84,6 +84,7 @@ class DiscogsSorterGui:
 
         :param request: Request for table
         '''
+        print('Pagination!')
         if isinstance(request, dict):
             new_pagination = request['args']['pagination']
         else:
@@ -112,7 +113,7 @@ class DiscogsSorterGui:
         )
 
         self.table_data['rows'] = new_rows
-        paginated_table.refresh()
+        self.paginated_table.refresh()
 
     def search_callback(self, query):
         '''
@@ -172,7 +173,7 @@ class DiscogsSorterGui:
             ui.label('Left Drawer')
 
         self.get_full_count()
-        ui.run()
 
 if __name__ in {"__main__", "__mp_main__"}:
     DiscogsSorterGui()
+    ui.run()
