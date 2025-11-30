@@ -3,7 +3,7 @@ import yaml
 from typing import List, Dict, Any, AnyStr
 
 from backend import DiscogsManager, PaginatedReleaseRequest
-
+from threading import Thread
 
 class DiscogsSorterGui:
     '''
@@ -12,11 +12,15 @@ class DiscogsSorterGui:
     INITIAL_PAGE_SIZE = 20
     INITIAL_PAGE = 0
 
-    def __init__(self) -> None:
+    def __init__(self, force_fetch: bool = False) -> None:
         '''
         Class initialisation method.
+
+        :param force_fetch: Force a fetch from Discogs.
+        :type force_fetch: bool
         '''
         self.manager = DiscogsManager()
+
         self.search_query = ''
 
         # Fetch initial releases
@@ -87,6 +91,7 @@ class DiscogsSorterGui:
             {'name': 'style_name', 'label': 'Styles', 'field': 'style_name', 'sortable': True, 
              'style': 'text-wrap: wrap'},
             {'name': 'year', 'label': 'Year', 'field': 'year', 'sortable': True},
+            {'name': 'format', 'label': 'Format', 'field': 'format', 'sortable': True},
             {'name': 'release_url', 'label': 'Discogs Link', 'field': 'release_url', 'sortable': False},
         ]
     
@@ -317,5 +322,19 @@ class DiscogsSorterGui:
         self.get_full_count()
 
 if __name__ in {"__main__", "__mp_main__"}:
-    gui = DiscogsSorterGui()
+    dm = DiscogsManager()
+    
+
+    def _background_fetch():
+        try:
+            dm.fetch_collection()
+            dm.fetch_artist_sort_names()
+        except Exception as e:
+            print('Background fetch error:', e)
+
+        print('Background fetch complete.')
+
+    Thread(target=_background_fetch, daemon=True).start()
+
+    gui = DiscogsSorterGui(force_fetch=False)
     ui.run()

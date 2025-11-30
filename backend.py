@@ -180,15 +180,16 @@ class DiscogsManager:
             cursor = conn.cursor()
 
             cursor.execute('''
-                INSERT OR REPLACE INTO releases (id, master_id, title, year, thumb_url, release_url)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO releases (id, master_id, title, year, thumb_url, release_url, format)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 rel_id,
                 basic_info.get('master_id', 0),
                 basic_info.get('title', ''),
                 basic_info.get('year', ''),
                 basic_info.get('thumb', ''),
-                f"https://www.discogs.com/release/{rel_id}"
+                f"https://www.discogs.com/release/{rel_id}",
+                basic_info.get('formats', {})[0].get('name', '')
             ))
 
             conn.commit()
@@ -364,6 +365,8 @@ class DiscogsManager:
             
             if progress_callback:
                 progress_callback(i + 1, total_releases)
+        
+        print('Finished!')
 
     def _get_artists_missing_sort_name(self):
         '''
@@ -516,7 +519,7 @@ class DiscogsManager:
             request.artist_ids,
             request.genre_ids,
             request.style_ids,
-            request.label_ids)
+            request.label_ids,)
 
         # 2. Prepare Pagination
         offset = request.page * request.page_size
@@ -712,7 +715,7 @@ class DiscogsManager:
             REPLACE(GROUP_CONCAT(DISTINCT l.name), ',', ', ') as label_name,
             REPLACE(GROUP_CONCAT(DISTINCT g.name), ',', ', ') as genres,
             REPLACE(GROUP_CONCAT(DISTINCT s.name), ',', ', ') as style_name,
-            rl.catno, r.year, r.release_url
+            rl.catno, r.year, r.release_url, r.format
         FROM releases r
         LEFT JOIN release_artists ra ON r.id = ra.release_id
         LEFT JOIN artists a ON ra.artist_id = a.id

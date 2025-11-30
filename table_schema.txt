@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS releases (
     year TEXT,
     thumb_url TEXT,
     release_url TEXT,
+    format TEXT,
     date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
