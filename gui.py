@@ -65,11 +65,15 @@ class DiscogsSorterGui:
 
         self.format_list = self.manager.get_unique_formats()
 
+        self.entered_pat = None
         self.artist_filter_ids = None
         self.genre_filter_ids = None
         self.style_filter_ids = None
         self.label_filter_ids = None
         self.format_selected_list = None
+        self.user_settings_dialog = self.create_user_settings_dialog()
+        
+        
         self.build_ui()
 
     def get_columns(self) -> List[Dict[str, Any]]:
@@ -322,7 +326,41 @@ class DiscogsSorterGui:
         else:
             ui.notify('Discogs disconnected.')
         self.build_settings_menu.refresh()
+        self.user_settings_dialog.close()
 
+    def create_user_settings_dialog(self) -> ui.dialog:
+        '''
+        Create the user settings dialog.
+
+        :return: The created, closed dialog.
+        :rtype: ui.dialog
+        '''
+        with ui.dialog().classes('w-full') as dialog, ui.card():
+            ui.label('User Settings').classes('text-xl font-bold')
+            ui.separator()
+            ui.label('Discogs Access Token').classes('text-l font-bold')
+            ui.markdown('Go to the [Discogs developers](https://www.discogs.com/settings/developers) settings page to generate a personal access token.')
+            with ui.row().classes('items-center'):
+                self.entered_pat = ui.input(label='Paste the personal access token here').classes('w-70')
+                with ui.button_group():
+                    ui.button('Save', on_click=self.save_pat_callback)
+                    ui.button('Connect', on_click=self.discogs_connection_toggle_callback)
+            ui.button('Close', on_click=dialog.close)
+            
+        return dialog
+    
+    def save_pat_callback(self):
+        '''
+        Save the new personal access token.
+        '''
+        if self.entered_pat is not None:
+            self.manager.save_token(self.entered_pat.value)
+    
+    def user_settings_dialog_callback(self):
+        '''
+        User settings dialog callback.
+        '''
+        self.user_settings_dialog.open()
         
     @ui.refreshable
     def build_settings_menu(self):
@@ -343,7 +381,7 @@ class DiscogsSorterGui:
                                             on_click=self.discogs_connection_toggle_callback)
                         else:
                             ui.menu_item('Connect to Discogs', on_click=self.discogs_connection_toggle_callback)
-                        ui.menu_item('User settings')
+                        ui.menu_item('User settings', on_click=self.user_settings_dialog_callback)
 
     def build_ui(self):
         '''
