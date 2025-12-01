@@ -940,3 +940,23 @@ class DiscogsManager:
             # fetchall() returns a list of Row objects (which behave like tuples).
             # We use a list comprehension to extract the first (and only) column value (the format string).
             return [row[0] for row in cursor.fetchall()]
+        
+    def toggle_discogs_connection(self) -> bool:
+        '''
+        Toggle the Discogs connection and return the status as a boolean.
+
+        :return: Boolean of the Discogs connection status.
+        :rtype: bool
+        '''
+
+        if self.user is not None:
+            self.user = None
+            return False
+        else:
+            # Connect to API
+            self.connect_client()
+            self.identity()
+            if self.user is not None:
+                return True
+            
+        return False

@@ -312,6 +312,39 @@ class DiscogsSorterGui:
         table.on_select(lambda e: print(f'Selected rows: {e}'))
         table.on('request', self.do_pagination)
 
+    def discogs_connection_toggle_callback(self):
+        '''
+        Discogs connection toggle callback function.
+        '''
+        result = self.manager.toggle_discogs_connection()
+        if result is True:
+            ui.notify(f'Discogs connected as user {self.manager.user.username}.')
+        else:
+            ui.notify('Discogs disconnected.')
+        self.build_settings_menu.refresh()
+
+        
+    @ui.refreshable
+    def build_settings_menu(self):
+        '''
+        Build the settings menu with callbacks etc.
+        '''
+        with ui.row().classes('items-center justify-between'):
+                if self.manager.user is not None:
+                    ui.label(f'Connected as {self.manager.user.username}')
+                else:
+                    ui.label(f'Disconnected from Discogs')
+                ui.space()
+                with ui.button(icon='settings'):
+                    with ui.menu().props('auto-close') as menu:
+                        # Check whether Discogs is connected or not
+                        if self.manager.user is not None:
+                            ui.menu_item('Disconnect from Discogs', 
+                                            on_click=self.discogs_connection_toggle_callback)
+                        else:
+                            ui.menu_item('Connect to Discogs', on_click=self.discogs_connection_toggle_callback)
+                        ui.menu_item('User settings')
+
     def build_ui(self):
         '''
         Build the user interface.
@@ -349,6 +382,10 @@ class DiscogsSorterGui:
                 self.format_list, multiple=True, label='Format Filter',
                 with_input=True, on_change=self.format_select_callback
                 ).classes('w-70').props('use-chips')
+
+            ui.space()
+
+            self.build_settings_menu()
 
         self.get_full_count()
 
