@@ -308,7 +308,6 @@ class DiscogsManager:
         '''
         custom_field_ids = set()
         for item in releases_list:
-            print(item.notes)
             if item.notes:
                 for note in item.notes:
                     custom_field_id = note['field_id']

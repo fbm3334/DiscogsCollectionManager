@@ -382,6 +382,21 @@ class DiscogsSorterGui:
                         else:
                             ui.menu_item('Connect to Discogs', on_click=self.discogs_connection_toggle_callback)
                         ui.menu_item('User settings', on_click=self.user_settings_dialog_callback)
+                        ui.menu_item('Refresh', on_click=self.start_refresh)
+
+    def _refresh_task(self):
+        self.manager.fetch_collection()
+        self.manager.fetch_artist_sort_names()
+
+    async def start_refresh(self):
+        ui.notify('Started refresh...')
+        await run.io_bound(self.manager.fetch_collection)
+        ui.notify('Fetching artist sort names...')
+        await run.io_bound(self.manager.fetch_artist_sort_names)
+        ui.notify('Refresh complete.')
+        self._send_manual_pagination_request()
+        self.paginated_table.refresh()
+        print('All done')
 
     def build_ui(self):
         '''
