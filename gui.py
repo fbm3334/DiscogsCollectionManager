@@ -1,4 +1,4 @@
-from nicegui import ui, run
+from nicegui import ui, run, app
 import yaml
 from typing import List, Dict, Any, AnyStr
 
@@ -73,8 +73,11 @@ class DiscogsSorterGui:
         self.format_selected_list = None
         self.user_settings_dialog = self.create_user_settings_dialog()
         
+        self.refresh_flag = False
         
         self.build_ui()
+
+        
 
     def get_columns(self) -> List[Dict[str, Any]]:
         '''
@@ -384,19 +387,30 @@ class DiscogsSorterGui:
                         ui.menu_item('User settings', on_click=self.user_settings_dialog_callback)
                         ui.menu_item('Refresh', on_click=self.start_refresh)
 
-    def _refresh_task(self):
-        self.manager.fetch_collection()
-        self.manager.fetch_artist_sort_names()
-
     async def start_refresh(self):
-        ui.notify('Started refresh...')
-        await run.io_bound(self.manager.fetch_collection)
-        ui.notify('Fetching artist sort names...')
-        await run.io_bound(self.manager.fetch_artist_sort_names)
-        ui.notify('Refresh complete.')
-        self._send_manual_pagination_request()
-        self.paginated_table.refresh()
-        print('All done')
+        '''
+        Asynchronously start a refresh from the Discogs API.
+        '''
+        if self.refresh_flag is False:
+            self.refresh_flag = True
+            try:
+                self.discogs_connection_toggle_callback()
+            except ValueError:
+                ui.notify('Could not refresh - go to User Settings \
+                           to add a personal access token.', type='warning')
+                self.user_settings_dialog_callback()
+                self.refresh_flag = False
+                return
+            self.build_settings_menu.refresh()
+            ui.notify('Started refresh...')
+            await run.io_bound(self.manager.fetch_collection)
+            ui.notify('Fetching artist sort names...')
+            await run.io_bound(self.manager.fetch_artist_sort_names)
+            ui.notify('Refresh complete.')
+            self._send_manual_pagination_request()
+            self.paginated_table.refresh()
+            print('All done')
+            self.refresh_flag = False
 
     def build_ui(self):
         '''
@@ -443,20 +457,7 @@ class DiscogsSorterGui:
         self.get_full_count()
 
 if __name__ in {"__main__", "__mp_main__"}:
-    dm = DiscogsManager()
-    
-
-    def _background_fetch():
-        try:
-            pass
-            #dm.fetch_collection()
-            #dm.fetch_artist_sort_names()
-        except Exception as e:
-            print('Background fetch error:', e)
-
-        print('Background fetch complete.')
-
-    Thread(target=_background_fetch, daemon=True).start()
-
     gui = DiscogsSorterGui(force_fetch=False)
-    ui.run()
+    ui.run(reload=False)
+    ui.timer(1, gui.start_refresh, once=True)
+
