@@ -50,6 +50,8 @@ class DiscogsManager:
         # Initialize DB
         self.init_db()
 
+        self.progress_stage = ""
+
     def load_settings(self):
         '''
         Load settings from YAML file.
@@ -350,11 +352,7 @@ class DiscogsManager:
         releases_to_process = self.user.collection_folders[0].releases
         total_releases = len(releases_to_process)
 
-        # Get the custom field IDs present
-        custom_field_ids = self.get_custom_field_ids(releases_to_process)
-        # Create tables for custom fields
-        for field_id in custom_field_ids:
-            self.create_custom_field_db(field_id)
+        custom_field_ids = set()
 
         for i, item in enumerate(releases_to_process):
             # item.data contains exactly what we need
@@ -362,9 +360,18 @@ class DiscogsManager:
             basic_info = item.data.get('basic_information')
             if basic_info:
                 self.save_release_to_db(basic_info, item.notes)
+
+            if item.notes:
+                for note in item.notes:
+                    custom_field_id = note['field_id']
+                    custom_field_ids.add(custom_field_id)
             
             if progress_callback:
                 progress_callback(i + 1, total_releases)
+
+        # Create tables for custom fields
+        for field_id in custom_field_ids:
+            self.create_custom_field_db(field_id)
         
         print('Finished!')
 

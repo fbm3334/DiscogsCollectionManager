@@ -74,6 +74,9 @@ class DiscogsSorterGui:
         self.user_settings_dialog = self.create_user_settings_dialog()
         
         self.refresh_flag = False
+        self.refresh_progress_area = None
+        self.progress_string = ""
+        self.progress_stage = ""
         
         self.build_ui()
 
@@ -393,6 +396,7 @@ class DiscogsSorterGui:
         '''
         if self.refresh_flag is False:
             self.refresh_flag = True
+            self.refresh_progress_area.set_visibility(True)
             try:
                 self.discogs_connection_toggle_callback()
             except ValueError:
@@ -403,14 +407,37 @@ class DiscogsSorterGui:
                 return
             self.build_settings_menu.refresh()
             ui.notify('Started refresh...')
-            await run.io_bound(self.manager.fetch_collection)
+            self.progress_stage = "Fetching collection"
+            await run.io_bound(self.manager.fetch_collection, self.update_progress_string)
             ui.notify('Fetching artist sort names...')
-            await run.io_bound(self.manager.fetch_artist_sort_names)
+            self.progress_stage = "Fetching artist sort names"
+            await run.io_bound(self.manager.fetch_artist_sort_names, self.update_progress_string)
             ui.notify('Refresh complete.')
             self._send_manual_pagination_request()
             self.paginated_table.refresh()
             print('All done')
             self.refresh_flag = False
+            self.refresh_progress_area.set_visibility(False)
+
+    def update_progress_string(self, current, total):
+        '''
+        Update the progress string.
+        
+        :param current: Current number.
+        :param total: Total number.
+        '''
+        progress_percentage = (current / total) * 100.0
+        self.progress_string = f'{self.progress_stage} ({progress_percentage:.1f}%)'
+        self.progress_area.refresh()
+
+    @ui.refreshable
+    def progress_area(self):
+        '''
+        Renders the progress area.
+        '''
+        with ui.row() as self.refresh_progress_area:
+            ui.spinner()
+            ui.label(self.progress_string)
 
     def build_ui(self):
         '''
@@ -451,6 +478,10 @@ class DiscogsSorterGui:
                 ).classes('w-70').props('use-chips')
 
             ui.space()
+
+            self.progress_area()
+
+            self.refresh_progress_area.set_visibility(False)
 
             self.build_settings_menu()
 
