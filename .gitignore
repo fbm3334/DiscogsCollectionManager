@@ -215,3 +215,6 @@ cache/
 # Export folder
 export/
 output/
+
+# User configuration
+config.toml

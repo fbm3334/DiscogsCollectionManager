@@ -1,9 +1,13 @@
-from nicegui import ui, run, app
-import yaml
+import shutil
+from datetime import datetime, timezone
 from typing import List, Dict, Any, AnyStr
+import asyncio
+
+from nicegui import ui, run
+import tomlkit as tk
+from tomlkit import TOMLDocument
 
 from backend import DiscogsManager, PaginatedReleaseRequest
-from threading import Thread
 
 class DiscogsSorterGui:
     '''
@@ -78,9 +82,36 @@ class DiscogsSorterGui:
         self.progress_string = ""
         self.progress_stage = ""
         
+        self.config: TOMLDocument
+
+        self.load_toml_config()
         self.build_ui()
 
+
+    def load_toml_config(self):
+        '''
+        Load the custom configuraton if it exists, else copy the default
+        config.
+        '''
+        # Try to load the config from config.toml
+        try:
+            with open('config.toml', 'r', encoding='utf-8') as f:
+                self.config = tk.load(f)
+        except FileNotFoundError:
+            # If the file isn't found, then copy over the default config
+            # and load it.
+            shutil.copyfile('defaultconfig.toml', 'config.toml')
+            with open('config.toml', 'r', encoding='utf-8') as f:
+                self.config = tk.load(f)
         
+        print(self.config)
+
+    def save_toml_config(self):
+        '''
+        Save the TOML config.
+        '''
+        with open('config.toml', 'w', encoding='utf-8') as f:
+            tk.dump(self.config, f)
 
     def get_columns(self) -> List[Dict[str, Any]]:
         '''
@@ -419,6 +450,26 @@ class DiscogsSorterGui:
             self.refresh_flag = False
             self.refresh_progress_area.set_visibility(False)
 
+    async def start_auto_refresh(self):
+        '''
+        Start an auto-refresh if the conditions allow:
+
+        - Auto-update is enabled.
+        - Enough time has elapsed.
+        '''
+        if self.config['Updates']['auto_update'] is True:
+            current_time = datetime.now(timezone.utc).timestamp()
+            prev_time = self.config['Updates']['update_time'].timestamp()
+            update_interval_secs = self.config['Updates']['update_interval'] * 60 * 60
+            time_diff = current_time - prev_time
+
+            self.config['Updates']['update_time'] = datetime.now(timezone.utc)
+            self.save_toml_config()
+
+            if time_diff > update_interval_secs:
+                await self.start_refresh()
+            
+
     def update_progress_string(self, current, total):
         '''
         Update the progress string.
@@ -492,8 +543,6 @@ if __name__ in {"__main__", "__mp_main__"}:
     ui.run(
         reload=False,
         favicon='💿',
-        title='Discogs Collection Manager',
-        native=True,
-        window_size=(1024, 768))
-    ui.timer(1, gui.start_refresh, once=True)
+        title='Discogs Collection Manager')
+    ui.timer(1, gui.start_auto_refresh, once=True)
 
