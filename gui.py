@@ -318,7 +318,7 @@ class DiscogsSorterGui:
                 <u><a :href="props.value">Link</a></u>
             </q-td>
         ''')
-        table.classes('w-full h-200 max-h-full virtual-scroll')
+        table.classes('w-full h-full virtual-scroll')
         table.on_select(lambda e: print(f'Selected rows: {e}'))
         table.on('request', self.do_pagination)
 
@@ -373,7 +373,7 @@ class DiscogsSorterGui:
         '''
         Build the settings menu with callbacks etc.
         '''
-        with ui.row().classes('items-center justify-between'):
+        with ui.row().classes('items-center justify-between w-70'):
                 if self.manager.user is not None:
                     ui.label(f'Connected as {self.manager.user.username}')
                 else:
@@ -448,7 +448,7 @@ class DiscogsSorterGui:
 
         with ui.header(elevated=True).classes('items-center justify-between bg-gray-900 text-white shadow-lg'):
             ui.button(on_click=lambda: left_drawer.toggle(), icon='menu')
-            ui.label('Discogs Manager Dashboard').classes('text-3xl font-extrabold')
+            ui.label('Discogs Collection Manager').classes('text-3xl font-extrabold')
             dark = ui.dark_mode()
             ui.switch('Dark mode').bind_value(dark)
             
@@ -489,6 +489,11 @@ class DiscogsSorterGui:
 
 if __name__ in {"__main__", "__mp_main__"}:
     gui = DiscogsSorterGui(force_fetch=False)
-    ui.run(reload=False)
+    ui.run(
+        reload=False,
+        favicon='💿',
+        title='Discogs Collection Manager',
+        native=True,
+        window_size=(1024, 768))
     ui.timer(1, gui.start_refresh, once=True)
 
