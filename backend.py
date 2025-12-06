@@ -269,12 +269,19 @@ class DiscogsManager:
         rel_id = basic_info.get('id')
         if not rel_id:
             return
+        
+        # Firstly check the custom field IDs and create tables if necessary
+        if notes is not None:
+            for note in notes:
+                field_id = note.get('field_id')
+                # Create the table
+                self.create_custom_field_db(field_id)
 
         with self.get_db_connection() as conn:
             cursor = conn.cursor()
             if notes is not None:
                 for note in notes:
-                    field_id = note.get('field_id')
+                    field_id = note.get('field_id')                  
                     note = note.get('value', '').strip()
                     table_name = f'custom_field_{field_id}'
                     cursor.execute(f'''
@@ -368,10 +375,6 @@ class DiscogsManager:
             
             if progress_callback:
                 progress_callback(i + 1, total_releases)
-
-        # Create tables for custom fields
-        for field_id in custom_field_ids:
-            self.create_custom_field_db(field_id)
         
         print('Finished!')
 
