@@ -377,33 +377,15 @@ class DiscogsSorterGui:
         '''
         Discogs connection toggle callback function.
         '''
-        result = self.manager.toggle_discogs_connection()
-        if result is True:
-            ui.notify(f'Discogs connected as user {self.manager.user.username}.')
-        else:
-            ui.notify('Discogs disconnected.')
-
-
-    def create_user_settings_dialog(self) -> ui.dialog:
-        '''
-        Create the user settings dialog.
-
-        :return: The created, closed dialog.
-        :rtype: ui.dialog
-        '''
-        with ui.dialog().classes('w-full') as dialog, ui.card():
-            ui.label('User Settings').classes('text-xl font-bold')
-            ui.separator()
-            ui.label('Discogs Access Token').classes('text-l font-bold')
-            ui.markdown('Go to the [Discogs developers](https://www.discogs.com/settings/developers) settings page to generate a personal access token.')
-            with ui.row().classes('items-center'):
-                self.entered_pat = ui.input(label='Paste the personal access token here').classes('w-70')
-                with ui.button_group():
-                    ui.button('Save', on_click=self.save_pat_callback)
-                    ui.button('Connect', on_click=self.discogs_connection_toggle_callback)
-            ui.button('Close', on_click=dialog.close)
-            
-        return dialog
+        self.save_pat_callback()
+        try:
+            result = self.manager.toggle_discogs_connection()
+            if result is True:
+                ui.notify(f'Discogs connected as user {self.manager.user.username}.')
+            else:
+                ui.notify('Discogs disconnected.')
+        except ValueError:
+            ui.notify('No personal access token entered.', type='warning')
     
     def save_pat_callback(self):
         '''
@@ -562,7 +544,6 @@ class DiscogsSorterGui:
         selected_page_class = 'bg-gray-300 font-bold'
         deselected_page_class = ''
 
-        print(context.client.page.path)
         with ui.list().classes('w-full'):
             # Loop through the list of SidebarPage objects
             for page in PAGES:
@@ -575,6 +556,34 @@ class DiscogsSorterGui:
                         ui.icon(page.icon)
                     with ui.item_section():
                         ui.item_label(page.label)
+
+    def build_settings_page(self):
+        '''
+        Build the settings page.
+        '''
+        ui.label('Discogs Settings').classes('text-xl font-bold')
+        ui.label('Discogs Access Token').classes('text-l font-bold')
+        ui.markdown('Go to the [Discogs developers](https://www.discogs.com/settings/developers) settings page to generate a personal access token.')
+        with ui.row().classes('items-center'):
+            self.entered_pat = ui.input(label='Paste the personal access token here').classes('w-70')
+            with ui.button_group():
+                ui.button('Save', on_click=self.save_pat_callback)
+                ui.button('Connect', on_click=self.discogs_connection_toggle_callback)
+        ui.separator().classes('w-full')
+        ui.label('Update Settings').classes('text-xl font-bold')
+        with ui.row().classes('items-center w-full'):
+            ui.label('Auto-update')
+            ui.space()
+            ui.switch(on_change=lambda: self.save_toml_config()).bind_value(self.config['Updates'], 'auto_update')
+        with ui.row().classes('items-center w-full'):
+            ui.label('Auto-update interval (hours)')
+            ui.space()
+            ui.number(precision=0, on_change=lambda: self.save_toml_config()).bind_value(self.config['Updates'], 'update_interval')
+        with ui.row().classes('items-center w-full'):
+            ui.label('Update date/time display format -')
+            ui.link('strftime.org gives a list of the codes', target='https://strftime.org', new_tab=True)
+            ui.space()
+            ui.textarea(on_change=lambda: self.save_toml_config()).bind_value(self.config['Updates'], 'update_time_display_format')
 
     def build_root_elements(self):
         '''
@@ -630,27 +639,4 @@ class DiscogsSorterGui:
             ui.button(text='Filters', icon='filter_alt', on_click=self.right_drawer.toggle)
 
         self.paginated_table()
-
-if __name__ in {"__main__", "__mp_main__"}:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--server', action='store_true')
-    args = parser.parse_args()
-    
-    server_mode = args.server
-    if server_mode:
-        print('Running in server mode...')
-    gui = DiscogsSorterGui(force_fetch=False)
-    try:
-        ui.run(
-            reload=False,
-            favicon='💿',
-            native=not(args.server),
-            title='Discogs Collection Manager')
-    except WebViewException:
-        print('WebView raised an exception - running in server mode...')
-        ui.run(
-            reload=False,
-            favicon='💿',
-            native=False,
-            title='Discogs Collection Manager')
 

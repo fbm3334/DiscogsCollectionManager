@@ -11,8 +11,7 @@ def main():
     dsg.build_main_ui()
 
 def settings():
-    ui.label('Another page content')
-    ui.link('Go to main page', '/')
+    dsg.build_settings_page()
 
 ui.run(root)
 
