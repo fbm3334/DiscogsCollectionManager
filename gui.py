@@ -1,9 +1,9 @@
-import shutil
+import argparse
 from datetime import datetime, timezone
+import shutil
 from typing import List, Dict, Any, AnyStr
-import asyncio
 
-from nicegui import ui, run
+from nicegui import ui, run, app, client
 import tomlkit as tk
 from tomlkit import TOMLDocument
 
@@ -547,10 +547,20 @@ class DiscogsSorterGui:
         self.get_full_count()
 
 if __name__ in {"__main__", "__mp_main__"}:
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--server', action='store_true')
+    args = parser.parse_args()
+    
+    server_mode = args.server
+    if server_mode:
+        print('Running in server mode...')
     gui = DiscogsSorterGui(force_fetch=False)
     ui.run(
-        reload=True,
+        reload=False,
         favicon='💿',
+        native=not(args.server),
         title='Discogs Collection Manager')
-    ui.timer(1, gui.start_auto_refresh, once=True)
+    
+    
+    app.timer(1, gui.start_auto_refresh, once=True)
 
