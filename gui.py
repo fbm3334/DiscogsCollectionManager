@@ -1,9 +1,9 @@
 import argparse
 from datetime import datetime, timezone
 import shutil
-from typing import List, Dict, Any, AnyStr
+from typing import List, Dict, Any
 
-from nicegui import ui, run, app, client
+from nicegui import ui, run, app
 import tomlkit as tk
 from tomlkit import TOMLDocument
 
