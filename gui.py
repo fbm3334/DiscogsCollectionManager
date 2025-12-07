@@ -495,7 +495,14 @@ class DiscogsSorterGui:
         '''
         Build the user interface.
         '''
-        ui.input('Search', on_change=self.search_callback).props('clearable rounded outlined dense')
+        with ui.row():
+            ui.input('Search', on_change=self.search_callback).props('clearable rounded outlined dense')
+            ui.markdown(f'**Last update:** {
+                self.config['Updates']['update_time'].strftime(
+                    self.config['Updates']['update_time_display_format']
+                )
+                }')
+
         self.paginated_table()
 
         with ui.header(elevated=True).classes('items-center justify-between bg-gray-900 text-white shadow-lg'):
@@ -542,7 +549,7 @@ class DiscogsSorterGui:
 if __name__ in {"__main__", "__mp_main__"}:
     gui = DiscogsSorterGui(force_fetch=False)
     ui.run(
-        reload=False,
+        reload=True,
         favicon='💿',
         title='Discogs Collection Manager')
     ui.timer(1, gui.start_auto_refresh, once=True)

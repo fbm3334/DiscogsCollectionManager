@@ -2,3 +2,6 @@
 auto_update = true
 update_interval = 24
 update_time = 2025-01-01T00:00:00Z
+# Time display format using the standard Python strftime() logic.
+# https://strftime.org is a handy reference
+update_time_display_format = "%A %x %H:%M"
