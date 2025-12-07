@@ -1,14 +1,30 @@
 import argparse
 from datetime import datetime, timezone
+from dataclasses import dataclass
 import shutil
 from typing import List, Dict, Any
 
-from nicegui import ui, run, app
+from nicegui import ui, run, app, context
 import tomlkit as tk
 from tomlkit import TOMLDocument
 from webview import WebViewException
 
 from backend import DiscogsManager, PaginatedReleaseRequest
+
+@dataclass
+class SidebarPage:
+    """Represents a page/item in the sidebar."""
+    key: int
+    label: str
+    icon: str
+    route: str
+
+PAGES = [
+    SidebarPage(key=0, label='Collection', icon='list_alt', route='/'),
+    SidebarPage(key=1, label='Settings', icon='settings', route='/settings'),
+    # You can easily add more pages here without changing the methods
+    # SidebarPage(key=2, label='New Page', icon='add', route='/new'),
+]
 
 class DiscogsSorterGui:
     '''
@@ -76,17 +92,20 @@ class DiscogsSorterGui:
         self.style_filter_ids = None
         self.label_filter_ids = None
         self.format_selected_list = None
-        self.user_settings_dialog = self.create_user_settings_dialog()
+        #self.user_settings_dialog = self.create_user_settings_dialog()
         
         self.refresh_flag = False
         self.refresh_progress_area = None
         self.progress_string = ""
         self.progress_stage = ""
+        self.refresh_spinner = None
         
         self.config: TOMLDocument
 
+        self.right_drawer = None
+        self.current_page_key = 0
+
         self.load_toml_config()
-        self.build_ui()
 
 
     def load_toml_config(self):
@@ -363,8 +382,7 @@ class DiscogsSorterGui:
             ui.notify(f'Discogs connected as user {self.manager.user.username}.')
         else:
             ui.notify('Discogs disconnected.')
-        self.build_settings_menu.refresh()
-        self.user_settings_dialog.close()
+
 
     def create_user_settings_dialog(self) -> ui.dialog:
         '''
@@ -428,13 +446,14 @@ class DiscogsSorterGui:
         '''
         if self.refresh_flag is False:
             self.refresh_flag = True
-            self.refresh_progress_area.set_visibility(True)
+            self.refresh_spinner.set_visibility(True)
+            #self.refresh_progress_area.set_visibility(True)
             try:
                 self.discogs_connection_toggle_callback()
             except ValueError:
                 ui.notify('Could not refresh - go to User Settings \
                            to add a personal access token.', type='warning')
-                self.user_settings_dialog_callback()
+                #self.user_settings_dialog_callback()
                 self.refresh_flag = False
                 return
             self.build_settings_menu.refresh()
@@ -449,7 +468,12 @@ class DiscogsSorterGui:
             self.paginated_table.refresh()
             print('All done')
             self.refresh_flag = False
-            self.refresh_progress_area.set_visibility(False)
+            self.config['Updates']['update_time'] = datetime.now(timezone.utc)
+            self.save_toml_config()
+            self.refresh_spinner.set_visibility(False)
+            self.progress_string = ""
+            self.footer_update_text.refresh()
+            self.footer_text.refresh()
 
     async def start_auto_refresh(self):
         '''
@@ -481,68 +505,131 @@ class DiscogsSorterGui:
         '''
         progress_percentage = (current / total) * 100.0
         self.progress_string = f'{self.progress_stage} ({progress_percentage:.1f}%)'
-        self.progress_area.refresh()
+        self.footer_update_text.refresh()
 
+    def build_filter_dropdowns(self):
+        '''
+        Build the filter dropdowns.
+        '''
+        ui.select(
+            self.artist_list, multiple=True, label='Artist Filter',
+            with_input=True, on_change=self.artist_select_callback
+            ).classes('w-70').props('use-chips')
+        ui.select(
+            self.genre_list, multiple=True, label='Genre Filter',
+            with_input=True, on_change=self.genre_select_callback
+            ).classes('w-70').props('use-chips')
+        
+        ui.select(
+            self.style_list, multiple=True, label='Style Filter',
+            with_input=True, on_change=self.style_select_callback
+            ).classes('w-70').props('use-chips')
+        
+        ui.select(
+            self.label_list, multiple=True, label='Label Filter',
+            with_input=True, on_change=self.label_select_callback
+            ).classes('w-70').props('use-chips')
+        
+        ui.select(
+            self.format_list, multiple=True, label='Format Filter',
+            with_input=True, on_change=self.format_select_callback
+            ).classes('w-70').props('use-chips')
+        
+    def navigate_refresh_left_drawer(self, page_key):
+        '''
+        Navigate to the next page and refresh the left drawer.
+        
+        :param page: Description
+        '''
+        self.current_page_key = page_key
+        
+        # Find the page data using the key
+        target_page = next((p for p in PAGES if p.key == page_key), None)
+        
+        if target_page:
+            ui.navigate.to(target_page.route)
+        else:
+            # Handle case where key is not found (optional)
+            print(f"Error: Page with key {page_key} not found.")
+
+        self.build_left_drawer.refresh()
+    
     @ui.refreshable
-    def progress_area(self):
+    def build_left_drawer(self):
         '''
-        Renders the progress area.
+        Build the left drawer.
         '''
-        with ui.row() as self.refresh_progress_area:
-            ui.spinner()
-            ui.label(self.progress_string)
+        selected_page_class = 'bg-gray-300 font-bold'
+        deselected_page_class = ''
 
-    def build_ui(self):
-        '''
-        Build the user interface.
-        '''
-        with ui.row():
-            ui.input('Search', on_change=self.search_callback).props('clearable rounded outlined dense')
-            formatted_string = self.config['Updates']['update_time'].strftime(self.config['Updates']['update_time_display_format'])
-            ui.markdown(f'**Last update:** {formatted_string}')
+        print(context.client.page.path)
+        with ui.list().classes('w-full'):
+            # Loop through the list of SidebarPage objects
+            for page in PAGES:
+                is_selected = self.current_page_key == page.key
+                
+                with ui.item(on_click=lambda p=page: self.navigate_refresh_left_drawer(p.key)).classes(
+                    selected_page_class if is_selected else deselected_page_class
+                ):
+                    with ui.item_section().props('avatar'):
+                        ui.icon(page.icon)
+                    with ui.item_section():
+                        ui.item_label(page.label)
 
-        self.paginated_table()
-
-        with ui.header(elevated=True).classes('items-center justify-between bg-gray-900 text-white shadow-lg'):
+    def build_root_elements(self):
+        '''
+        Build the root elements of the user interface (i.e. that will show on
+        every page).
+        '''
+        with ui.header(elevated=True).classes('bg-gray-900 text-white shadow-lg'):
             ui.button(on_click=lambda: left_drawer.toggle(), icon='menu')
             ui.label('Discogs Collection Manager').classes('text-3xl font-extrabold')
-            dark = ui.dark_mode()
-            ui.switch('Dark mode').bind_value(dark)
             
-        with ui.left_drawer(top_corner=False, bottom_corner=True) as left_drawer:
-            ui.select(
-                self.artist_list, multiple=True, label='Artist Filter',
-                with_input=True, on_change=self.artist_select_callback
-                ).classes('w-70').props('use-chips')
-            ui.select(
-                self.genre_list, multiple=True, label='Genre Filter',
-                with_input=True, on_change=self.genre_select_callback
-                ).classes('w-70').props('use-chips')
-            
-            ui.select(
-                self.style_list, multiple=True, label='Style Filter',
-                with_input=True, on_change=self.style_select_callback
-                ).classes('w-70').props('use-chips')
-            
-            ui.select(
-                self.label_list, multiple=True, label='Label Filter',
-                with_input=True, on_change=self.label_select_callback
-                ).classes('w-70').props('use-chips')
-            
-            ui.select(
-                self.format_list, multiple=True, label='Format Filter',
-                with_input=True, on_change=self.format_select_callback
-                ).classes('w-70').props('use-chips')
+        with ui.left_drawer() as left_drawer:
+            self.build_left_drawer()
 
+        with ui.right_drawer(value=False, top_corner=False, bottom_corner=False) as self.right_drawer:
+            self.build_filter_dropdowns()
+
+        with ui.footer().classes('bg-gray-900 text-white shadow-lg items-center p-1') as footer:
+            self.footer_text()
             ui.space()
+            self.footer_update_text()
+            self.refresh_spinner = ui.spinner(color='white')
+            self.refresh_spinner.set_visibility(False)
 
-            self.progress_area()
+    @ui.refreshable
+    def footer_text(self):
+        '''
+        Function for the footer text - updateable.
+        '''
+        formatted_string = self.config['Updates']['update_time'].strftime(self.config['Updates']['update_time_display_format'])
+        ui.markdown(f'**Last update:** {formatted_string}')
+        if self.manager.user is not None:
+            ui.icon('link', size='24px').classes('p-0')
+            ui.label(f'Connected to Discogs as {self.manager.user.username}')
+        else:
+            ui.icon('link_off', size='24px').classes('p-0')
+            ui.label('Disconnected from Discogs')
 
-            self.refresh_progress_area.set_visibility(False)
+    @ui.refreshable
+    def footer_update_text(self):
+        '''
+        Function for footer update text - updateable.
+        '''
+        ui.label(f'{self.progress_string}')
 
-            self.build_settings_menu()
+    def build_main_ui(self):
+        '''
+        Build the main UI.
+        '''
+        with ui.row().classes('items-center justify-between content-between w-full bg-clip-padding'):
+            ui.input('Search', on_change=self.search_callback).props('clearable rounded outlined dense')
+            ui.button(icon='refresh', on_click=self.start_refresh)
+            ui.space()
+            ui.button(text='Filters', icon='filter_alt', on_click=self.right_drawer.toggle)
 
-        self.get_full_count()
+        self.paginated_table()
 
 if __name__ in {"__main__", "__mp_main__"}:
     parser = argparse.ArgumentParser()
@@ -566,8 +653,4 @@ if __name__ in {"__main__", "__mp_main__"}:
             favicon='💿',
             native=False,
             title='Discogs Collection Manager')
-
-    
-    
-    app.timer(1, gui.start_auto_refresh, once=True)
 
