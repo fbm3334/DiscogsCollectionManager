@@ -463,11 +463,12 @@ class DiscogsSorterGui:
             update_interval_secs = self.config['Updates']['update_interval'] * 60 * 60
             time_diff = current_time - prev_time
 
-            self.config['Updates']['update_time'] = datetime.now(timezone.utc)
-            self.save_toml_config()
-
             if time_diff > update_interval_secs:
+                self.config['Updates']['update_time'] = datetime.now(timezone.utc)
+                self.save_toml_config()
                 await self.start_refresh()
+            else:
+                print('Not auto updating.')
             
 
     def update_progress_string(self, current, total):
