@@ -13,6 +13,6 @@ def main():
 def settings():
     dsg.build_settings_page()
 
-ui.run(root)
+ui.run(root, favicon='🎧', title='Discogs Collection Manager')
 
 app.timer(1, dsg.start_auto_refresh, once=True)
