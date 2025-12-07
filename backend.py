@@ -10,7 +10,6 @@ import re
 from contextlib import contextmanager
 from dataclasses import dataclass
 
-import pandas as pd
 import discogs_client as dc
 import yaml
 
@@ -43,7 +42,6 @@ class DiscogsManager:
         self.pat = None
         self.client = None
         self.user = None
-        self.df = pd.DataFrame()
         self.load_settings()
         self.load_token()
         
