@@ -9,8 +9,11 @@ The minimum supported Python version is 3.12 - older versions may work but are n
 1. Clone the repository to your PC.
 2. Create a Python virtual environment.
 3. Install the required dependencies from requirements.txt:
+   
     $ pip install -r requirements.txt
-4. Run the Python script:
+   
+5. Run the Python script:
+   
     $ python gui.py
 
 # License
