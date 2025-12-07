@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 from nicegui import ui, run, app
 import tomlkit as tk
 from tomlkit import TOMLDocument
+from webview import WebViewException
 
 from backend import DiscogsManager, PaginatedReleaseRequest
 
@@ -497,11 +498,8 @@ class DiscogsSorterGui:
         '''
         with ui.row():
             ui.input('Search', on_change=self.search_callback).props('clearable rounded outlined dense')
-            ui.markdown(f'**Last update:** {
-                self.config['Updates']['update_time'].strftime(
-                    self.config['Updates']['update_time_display_format']
-                )
-                }')
+            formatted_string = self.config['Updates']['update_time'].strftime(self.config['Updates']['update_time_display_format'])
+            ui.markdown(f'**Last update:** {formatted_string}')
 
         self.paginated_table()
 
@@ -555,11 +553,20 @@ if __name__ in {"__main__", "__mp_main__"}:
     if server_mode:
         print('Running in server mode...')
     gui = DiscogsSorterGui(force_fetch=False)
-    ui.run(
-        reload=False,
-        favicon='💿',
-        native=not(args.server),
-        title='Discogs Collection Manager')
+    try:
+        ui.run(
+            reload=False,
+            favicon='💿',
+            native=not(args.server),
+            title='Discogs Collection Manager')
+    except WebViewException:
+        print('WebView raised an exception - running in server mode...')
+        ui.run(
+            reload=False,
+            favicon='💿',
+            native=False,
+            title='Discogs Collection Manager')
+
     
     
     app.timer(1, gui.start_auto_refresh, once=True)
