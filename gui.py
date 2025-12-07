@@ -438,7 +438,6 @@ class DiscogsSorterGui:
                 #self.user_settings_dialog_callback()
                 self.refresh_flag = False
                 return
-            self.build_settings_menu.refresh()
             ui.notify('Started refresh...')
             self.progress_stage = "Fetching collection"
             await run.io_bound(self.manager.fetch_collection, self.update_progress_string)
