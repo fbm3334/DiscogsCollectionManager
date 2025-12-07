@@ -1,8 +1,11 @@
 import argparse
+import multiprocessing
 
 from nicegui import ui, app
 
 from gui import DiscogsSorterGui
+
+multiprocessing.set_start_method("spawn", force=True)
 
 dsg = DiscogsSorterGui(force_fetch=False)
 
