@@ -141,6 +141,7 @@ class DiscogsSorterGui:
         :rtype: list
         '''
         return [
+            {'name': 'thumb', 'label': 'Discogs Link', 'field': 'thumb_url', 'sortable': False},
             {'name': 'id', 'label': 'ID', 'field': 'id', 'sortable': True},
             {'name': 'artist_name', 'label': 'Artist', 'field': 'artist_name', 'sortable': True, 
              'style': 'text-wrap: wrap'},
@@ -366,6 +367,11 @@ class DiscogsSorterGui:
         table.add_slot('body-cell-release_url', '''
             <q-td :props="props">
                 <u><a :href="props.value">Link</a></u>
+            </q-td>
+        ''')
+        table.add_slot('body-cell-thumb', '''
+             <q-td :props="props">
+                <img :src="props.value" style="max-width: 50px; max-height: 50px;">
             </q-td>
         ''')
         table.classes('virtual-scroll h-[calc(100vh-200px)]')

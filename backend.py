@@ -548,6 +548,8 @@ class DiscogsManager:
             cursor = conn.execute(query, full_params)
             rows = [dict(row) for row in cursor.fetchall()]
 
+        print(rows)
+
         return rows, total_rows
 
     def _build_order_clause(self, sort_by: str, desc: bool) -> str:
@@ -731,7 +733,7 @@ class DiscogsManager:
             REPLACE(GROUP_CONCAT(DISTINCT l.name), ',', ', ') as label_name,
             REPLACE(GROUP_CONCAT(DISTINCT g.name), ',', ', ') as genres,
             REPLACE(GROUP_CONCAT(DISTINCT s.name), ',', ', ') as style_name,
-            rl.catno, r.year, r.release_url, r.format
+            rl.catno, r.year, r.release_url, r.format, r.thumb_url
         FROM releases r
         LEFT JOIN release_artists ra ON r.id = ra.release_id
         LEFT JOIN artists a ON ra.artist_id = a.id
