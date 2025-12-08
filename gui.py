@@ -141,7 +141,7 @@ class DiscogsSorterGui:
         :rtype: list
         '''
         return [
-            {'name': 'thumb', 'label': 'Discogs Link', 'field': 'thumb_url', 'sortable': False},
+            {'name': 'thumb', 'label': 'Art', 'field': 'thumb_url', 'sortable': False},
             {'name': 'id', 'label': 'ID', 'field': 'id', 'sortable': True},
             {'name': 'artist_name', 'label': 'Artist', 'field': 'artist_name', 'sortable': True, 
              'style': 'text-wrap: wrap'},
