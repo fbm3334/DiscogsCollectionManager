@@ -220,6 +220,15 @@ class DiscogsManager:
                 except ValueError:
                     # Ignore tables that don't follow the naming convention
                     continue
+    
+    def get_custom_field_ids_set(self) -> set:
+        '''
+        Get the custom field IDs from the database.
+
+        :return: Set containing custom field IDs.
+        :rtype: set
+        '''
+        return self.custom_ids
 
     def _save_artist_to_artist_db(self, basic_info: dict):
         '''

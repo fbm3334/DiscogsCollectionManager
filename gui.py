@@ -140,7 +140,7 @@ class DiscogsSorterGui:
         :return: A list containing column dictionaries.
         :rtype: list
         '''
-        return [
+        column_list = [
             {'name': 'thumb', 'label': 'Art', 'field': 'thumb_url', 'sortable': False},
             {'name': 'id', 'label': 'ID', 'field': 'id', 'sortable': True},
             {'name': 'artist_name', 'label': 'Artist', 'field': 'artist_name', 'sortable': True, 
@@ -159,6 +159,15 @@ class DiscogsSorterGui:
             {'name': 'format', 'label': 'Format', 'field': 'format', 'sortable': True},
             {'name': 'release_url', 'label': 'Discogs Link', 'field': 'release_url', 'sortable': False},
         ]
+        for custom_field in self.manager.get_custom_field_ids_set():
+            column_list.append(
+                {'name': f'custom_field_{custom_field}', 
+                 'label': f'custom_field_{custom_field}',
+                 'field': f'custom_{custom_field}',
+                 'sortable': True, 
+                 'style': 'text-wrap: wrap'}
+            )
+        return column_list
     
     def get_full_count(self) -> int:
         '''
