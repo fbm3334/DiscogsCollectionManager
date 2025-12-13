@@ -176,6 +176,19 @@ class DiscogsSorterGui:
             )
         return column_list
     
+    def _toggle_columns(self, column: dict, visible: bool):
+        '''
+        Toggle columns to show/hide them.
+        
+        :param column: Column to toggle.
+        :type column: dict
+        :param visible: Visibility status
+        :type visible: bool
+        '''
+        column['classes'] = '' if visible else 'hidden'
+        column['headerClasses'] = '' if visible else 'hidden'
+        self.paginated_table.refresh()
+    
     def get_full_count(self) -> int:
         '''
         Get the count of releases and save the count (equal to the number of
@@ -577,9 +590,9 @@ class DiscogsSorterGui:
                     with ui.item_section():
                         ui.item_label(page.label)
 
-    def build_settings_page(self):
+    def _build_discogs_access_token_settings(self):
         '''
-        Build the settings page.
+        Build the Discogs access token settings.
         '''
         ui.label('Discogs Settings').classes('text-xl font-bold')
         ui.label('Discogs Access Token').classes('text-l font-bold')
@@ -589,7 +602,11 @@ class DiscogsSorterGui:
             with ui.button_group():
                 ui.button('Save', on_click=self.save_pat_callback)
                 ui.button('Connect', on_click=self.discogs_connection_toggle_callback)
-        ui.separator().classes('w-full')
+
+    def _build_update_settings(self):
+        '''
+        Build the update settings.
+        '''
         ui.label('Update Settings').classes('text-xl font-bold')
         with ui.row().classes('items-center w-full'):
             ui.label('Auto-update')
@@ -604,6 +621,29 @@ class DiscogsSorterGui:
             ui.link('strftime.org gives a list of the codes', target='https://strftime.org', new_tab=True)
             ui.space()
             ui.textarea(on_change=lambda: self.save_toml_config()).bind_value(self.config['Updates'], 'update_time_display_format')
+
+    def _build_custom_field_name_settings(self):
+        '''
+        Build the custom field name settings.
+        '''
+        ui.label('Custom Field Names').classes('text-xl font-bold')
+        for label in self.manager.get_custom_field_ids_set():
+            with ui.row().classes('items-center w-full'):
+                ui.label(f'Custom field {label} name')
+                ui.space()
+                ui.input(on_change=lambda: self.save_toml_config()).bind_value(self.config['CustomFields'], f'field_{label}')
+
+    def build_settings_page(self):
+        '''
+        Build the settings page.
+        '''
+        self._build_discogs_access_token_settings()
+        ui.separator().classes('w-full')
+        self._build_update_settings()
+        ui.separator().classes('w-full')
+        self._build_custom_field_name_settings()
+        ui.separator().classes('w-full')
+
 
     def build_root_elements(self):
         '''
