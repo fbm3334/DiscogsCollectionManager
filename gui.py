@@ -1,13 +1,12 @@
-import argparse
 from datetime import datetime, timezone
 from dataclasses import dataclass
 import shutil
 from typing import List, Dict, Any
 
-from nicegui import ui, run, app, context
+from nicegui import ui, run
 import tomlkit as tk
 from tomlkit import TOMLDocument
-from webview import WebViewException
+from tomlkit.exceptions import NonExistentKey
 
 from backend import DiscogsManager, PaginatedReleaseRequest
 
@@ -107,6 +106,9 @@ class DiscogsSorterGui:
 
         self.load_toml_config()
 
+        self.table: ui.table
+
+        
 
     def load_toml_config(self):
         '''
@@ -140,7 +142,7 @@ class DiscogsSorterGui:
         :return: A list containing column dictionaries.
         :rtype: list
         '''
-        return [
+        column_list = [
             {'name': 'thumb', 'label': 'Art', 'field': 'thumb_url', 'sortable': False},
             {'name': 'id', 'label': 'ID', 'field': 'id', 'sortable': True},
             {'name': 'artist_name', 'label': 'Artist', 'field': 'artist_name', 'sortable': True, 
@@ -159,6 +161,34 @@ class DiscogsSorterGui:
             {'name': 'format', 'label': 'Format', 'field': 'format', 'sortable': True},
             {'name': 'release_url', 'label': 'Discogs Link', 'field': 'release_url', 'sortable': False},
         ]
+        for custom_field in self.manager.get_custom_field_ids_set():
+            # Try to get the user-set custon name, else use a default
+            try:
+                name = self.config['CustomFields'][f'field_{custom_field}']
+            except NonExistentKey:
+                name = f'Field {custom_field}'
+
+            column_list.append(
+                {'name': f'custom_{custom_field}',
+                 'label': name,
+                 'field': f'custom_{custom_field}',
+                 'sortable': True, 
+                 'style': 'text-wrap: wrap'}
+            )
+        return column_list
+    
+    def _toggle_columns(self, column: dict, visible: bool):
+        '''
+        Toggle columns to show/hide them.
+        
+        :param column: Column to toggle.
+        :type column: dict
+        :param visible: Visibility status
+        :type visible: bool
+        '''
+        column['classes'] = '' if visible else 'hidden'
+        column['headerClasses'] = '' if visible else 'hidden'
+        self.table.update()
     
     def get_full_count(self) -> int:
         '''
@@ -358,25 +388,25 @@ class DiscogsSorterGui:
         '''
         Function to render the paginated table.
         '''
-        table = ui.table(
+        self.table = ui.table(
             rows=self.table_data['rows'],
             columns=self.get_columns(),
             pagination=self.table_data['pagination'],
             row_key='name'
         )
-        table.add_slot('body-cell-release_url', '''
+        self.table.add_slot('body-cell-release_url', '''
             <q-td :props="props">
                 <u><a :href="props.value">Link</a></u>
             </q-td>
         ''')
-        table.add_slot('body-cell-thumb', '''
+        self.table.add_slot('body-cell-thumb', '''
              <q-td :props="props">
                 <img :src="props.value" style="max-width: 50px; max-height: 50px;">
             </q-td>
         ''')
-        table.classes('virtual-scroll h-[calc(100vh-200px)] w-[calc(100vw-330px)]')
-        table.on_select(lambda e: print(f'Selected rows: {e}'))
-        table.on('request', self.do_pagination)
+
+        self.table.classes('virtual-scroll h-[calc(100vh-200px)] w-[calc(100vw-330px)]')
+        self.table.on('request', self.do_pagination)
 
     def discogs_connection_toggle_callback(self):
         '''
@@ -414,10 +444,10 @@ class DiscogsSorterGui:
                 if self.manager.user is not None:
                     ui.label(f'Connected as {self.manager.user.username}')
                 else:
-                    ui.label(f'Disconnected from Discogs')
+                    ui.label('Disconnected from Discogs')
                 ui.space()
                 with ui.button(icon='settings'):
-                    with ui.menu().props('auto-close') as menu:
+                    with ui.menu().props('auto-close'):
                         # Check whether Discogs is connected or not
                         if self.manager.user is not None:
                             ui.menu_item('Disconnect from Discogs', 
@@ -561,9 +591,9 @@ class DiscogsSorterGui:
                     with ui.item_section():
                         ui.item_label(page.label)
 
-    def build_settings_page(self):
+    def _build_discogs_access_token_settings(self):
         '''
-        Build the settings page.
+        Build the Discogs access token settings.
         '''
         ui.label('Discogs Settings').classes('text-xl font-bold')
         ui.label('Discogs Access Token').classes('text-l font-bold')
@@ -573,7 +603,11 @@ class DiscogsSorterGui:
             with ui.button_group():
                 ui.button('Save', on_click=self.save_pat_callback)
                 ui.button('Connect', on_click=self.discogs_connection_toggle_callback)
-        ui.separator().classes('w-full')
+
+    def _build_update_settings(self):
+        '''
+        Build the update settings.
+        '''
         ui.label('Update Settings').classes('text-xl font-bold')
         with ui.row().classes('items-center w-full'):
             ui.label('Auto-update')
@@ -588,6 +622,78 @@ class DiscogsSorterGui:
             ui.link('strftime.org gives a list of the codes', target='https://strftime.org', new_tab=True)
             ui.space()
             ui.textarea(on_change=lambda: self.save_toml_config()).bind_value(self.config['Updates'], 'update_time_display_format')
+
+    def _build_custom_field_name_settings(self):
+        '''
+        Build the custom field name settings.
+        '''
+        ui.label('Custom Field Names').classes('text-xl font-bold')
+        for label in self.manager.get_custom_field_ids_set():
+            with ui.row().classes('items-center w-full'):
+                ui.label(f'Custom field {label} name')
+                ui.space()
+                ui.input(on_change=lambda: self.save_toml_config()).bind_value(self.config['CustomFields'], f'field_{label}')
+
+
+    def _column_show_hide_callback(self, column: dict, visible: bool):
+        '''
+        Column show and hide callback - toggles the column as well as saves the
+        config.
+        
+        :param column: Column to toggle.
+        :type column: dict
+        :param visible: Visibility status
+        :type visible: bool
+        '''
+        print(column, visible)
+        self._toggle_columns(column, visible)
+        self.table.update()
+        self.save_toml_config()
+        pass
+
+    def _make_column_config_list(self):
+        '''
+        Make the column configuration list.
+        '''
+        # Check if the table name is in the document and create if not
+        table_name = 'ColumnVisibility'
+        
+
+        if table_name not in self.config:
+            new_table = tk.table(is_super_table=True)
+            self.config.add(table_name, new_table)
+
+        config_table = self.config[table_name]
+
+        for column in self.table.columns:
+            # If the value exists, then create the key-value pairs
+            print(column['field'])
+            # If the field doesn't exist in the config table, create it, else
+            # update the table accordingly
+            if column['field'] not in config_table:
+                config_table[column['field']] = True
+            else:
+                self._toggle_columns(column, config_table[column['field']])
+
+    def _build_column_show_hide_settings(self):
+        '''
+        Build the column show/hide settings.
+        '''
+        self._make_column_config_list()
+        for column in self.table.columns:
+            table_name = 'ColumnVisibility'
+            ui.checkbox(column['label'], on_change=lambda e, column=column: self._column_show_hide_callback(column, e.value)).bind_value(self.config[table_name], column['field'])
+
+    def build_settings_page(self):
+        '''
+        Build the settings page.
+        '''
+        self._build_discogs_access_token_settings()
+        ui.separator().classes('w-full')
+        self._build_update_settings()
+        ui.separator().classes('w-full')
+        self._build_custom_field_name_settings()
+
 
     def build_root_elements(self):
         '''
@@ -605,7 +711,7 @@ class DiscogsSorterGui:
             ui.button(on_click=self.right_drawer.hide, icon='close')
             self.build_filter_dropdowns()
 
-        with ui.footer().classes('bg-gray-900 text-white shadow-lg items-center p-1') as footer:
+        with ui.footer().classes('bg-gray-900 text-white shadow-lg items-center p-1'):
             self.footer_text()
             ui.space()
             self.footer_update_text()
@@ -633,6 +739,21 @@ class DiscogsSorterGui:
         '''
         ui.label(f'{self.progress_string}')
 
+    @ui.refreshable
+    def _build_column_show_hide_button(self):
+        '''
+        Build a refreshable element for the column show/hide button.
+        
+        This is to avoid an AttributeError when the paginated table has not yet
+        been created.
+        '''
+        try:
+            with ui.button('Show/Hide Columns'):
+                with ui.menu(), ui.column().classes('gap-0 p-2'):
+                    self._build_column_show_hide_settings()
+        except AttributeError:
+            print('Show/hide button not added.')
+
     def build_main_ui(self):
         '''
         Build the main UI.
@@ -641,7 +762,10 @@ class DiscogsSorterGui:
             ui.input('Search', on_change=self.search_callback).props('clearable rounded outlined dense')
             ui.button(icon='refresh', on_click=self.start_refresh)
             ui.space()
+            self._build_column_show_hide_button()
             ui.button(text='Filters', icon='filter_alt', on_click=self.right_drawer.toggle)
 
         self.paginated_table()
+        self.table.update()
+        self._build_column_show_hide_button.refresh()
 

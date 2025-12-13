@@ -44,9 +44,13 @@ class DiscogsManager:
         self.user = None
         self.load_settings()
         self.load_token()
-        
+        self.custom_ids = set()
+
         # Initialize DB
         self.init_db()
+
+        # Load the custom fields from the database
+        self._load_custom_field_ids_from_db()
 
         self.progress_stage = ""
 
@@ -195,6 +199,37 @@ class DiscogsManager:
 
             conn.commit()
 
+    def _load_custom_field_ids_from_db(self):
+        '''
+        Loads all known custom field IDs by querying the SQLite master table.
+        This ensures custom fields are available even if fetch_collection isn't run.
+        '''
+        self.custom_ids = set()
+        
+        # Query the SQLite master table to find all tables matching the pattern
+        query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'custom_field_%';"
+        
+        with self.get_db_connection() as conn:
+            cursor = conn.execute(query)
+            for row in cursor.fetchall():
+                table_name = row['name']
+                # Extract the ID from the table name (e.g., 'custom_field_1' -> '1')
+                try:
+                    field_id = int(table_name.replace('custom_field_', ''))
+                    self.custom_ids.add(field_id)
+                except ValueError:
+                    # Ignore tables that don't follow the naming convention
+                    continue
+    
+    def get_custom_field_ids_set(self) -> set:
+        '''
+        Get the custom field IDs from the database.
+
+        :return: Set containing custom field IDs.
+        :rtype: set
+        '''
+        return self.custom_ids
+
     def _save_artist_to_artist_db(self, basic_info: dict):
         '''
         Sort the release into the relevant artist databases.
@@ -318,6 +353,7 @@ class DiscogsManager:
             if item.notes:
                 for note in item.notes:
                     custom_field_id = note['field_id']
+                    print(custom_field_id)
                     custom_field_ids.add(custom_field_id)
         return custom_field_ids
     
@@ -373,6 +409,8 @@ class DiscogsManager:
             
             if progress_callback:
                 progress_callback(i + 1, total_releases)
+
+        self.custom_ids = custom_field_ids
         
         print('Finished!')
 
@@ -549,7 +587,6 @@ class DiscogsManager:
             rows = [dict(row) for row in cursor.fetchall()]
 
         print(rows)
-
         return rows, total_rows
 
     def _build_order_clause(self, sort_by: str, desc: bool) -> str:
@@ -563,7 +600,13 @@ class DiscogsManager:
         :returns: The complete SQL fragment for the ORDER BY clause.
         :rtype: str
         '''
+        
         order_dir = 'DESC' if desc else 'ASC'
+
+        # Check if the sort is by a custom field
+        if sort_by.startswith('custom_') and sort_by.replace('custom_', '').isdigit():
+            return f'{sort_by} COLLATE NOCASE {order_dir}'
+        
         allowed_sorts = ['title', 'year', 'date_added', 'id', 'artist']
         
         # Default to 'date_added' if input is invalid
@@ -725,6 +768,26 @@ class DiscogsManager:
         :returns: The full parameterized SQL query string.
         :rtype: str
         '''
+        # Build the SELECT and JOIN clauses for the custom fields
+        custom_select_parts = []
+        custom_join_parts = []
+
+        print('IDs', self.custom_ids)
+        for field_id in self.custom_ids:
+            print('IDs', self.custom_ids)
+            table_name = f'custom_field_{field_id}'
+            alias = f'cf{field_id}'
+
+            custom_select_parts.append(f'{alias}.field_value AS custom_{field_id}')
+
+            custom_join_parts.append(f'''
+                LEFT JOIN {table_name} {alias} ON r.id = {alias}.release_id
+                                     ''')
+            
+        custom_select_sql = ',\n' + ',\n'.join(custom_select_parts) if custom_select_parts else ''
+        print(custom_select_sql)
+        custom_join_sql = '\n'.join(custom_join_parts)
+
         return f'''
         SELECT 
             r.id,
@@ -734,6 +797,7 @@ class DiscogsManager:
             REPLACE(GROUP_CONCAT(DISTINCT g.name), ',', ', ') as genres,
             REPLACE(GROUP_CONCAT(DISTINCT s.name), ',', ', ') as style_name,
             rl.catno, r.year, r.release_url, r.format, r.thumb_url
+            {custom_select_sql}
         FROM releases r
         LEFT JOIN release_artists ra ON r.id = ra.release_id
         LEFT JOIN artists a ON ra.artist_id = a.id
@@ -743,6 +807,7 @@ class DiscogsManager:
         LEFT JOIN labels l ON rl.label_id = l.id
         LEFT JOIN release_styles rs on r.id = rs.release_id
         LEFT JOIN styles s on rs.style_id = s.id
+        {custom_join_sql}
         {where_sql}
         GROUP BY r.id
         ORDER BY {order_clause}
