@@ -404,7 +404,8 @@ class DiscogsSorterGui:
                 <img :src="props.value" style="max-width: 50px; max-height: 50px;">
             </q-td>
         ''')
-        self.table.classes('virtual-scroll h-[calc(100vh-200px)]')
+
+        self.table.classes('virtual-scroll h-[calc(100vh-200px)] w-[calc(100vw-330px)]')
         self.table.on('request', self.do_pagination)
 
     def discogs_connection_toggle_callback(self):
@@ -706,7 +707,8 @@ class DiscogsSorterGui:
         with ui.left_drawer() as left_drawer:
             self.build_left_drawer()
 
-        with ui.right_drawer(value=False, top_corner=False, bottom_corner=False) as self.right_drawer:
+        with ui.right_drawer(value=False, top_corner=False, bottom_corner=False, elevated=True) as self.right_drawer:
+            ui.button(on_click=self.right_drawer.hide, icon='close')
             self.build_filter_dropdowns()
 
         with ui.footer().classes('bg-gray-900 text-white shadow-lg items-center p-1'):
