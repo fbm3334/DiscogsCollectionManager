@@ -600,7 +600,13 @@ class DiscogsManager:
         :returns: The complete SQL fragment for the ORDER BY clause.
         :rtype: str
         '''
+        
         order_dir = 'DESC' if desc else 'ASC'
+
+        # Check if the sort is by a custom field
+        if sort_by.startswith('custom_') and sort_by.replace('custom_', '').isdigit():
+            return f'{sort_by} COLLATE NOCASE {order_dir}'
+        
         allowed_sorts = ['title', 'year', 'date_added', 'id', 'artist']
         
         # Default to 'date_added' if input is invalid

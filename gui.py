@@ -7,6 +7,7 @@ from typing import List, Dict, Any
 from nicegui import ui, run, app, context
 import tomlkit as tk
 from tomlkit import TOMLDocument
+from tomlkit.exceptions import NonExistentKey
 from webview import WebViewException
 
 from backend import DiscogsManager, PaginatedReleaseRequest
@@ -160,9 +161,15 @@ class DiscogsSorterGui:
             {'name': 'release_url', 'label': 'Discogs Link', 'field': 'release_url', 'sortable': False},
         ]
         for custom_field in self.manager.get_custom_field_ids_set():
+            # Try to get the user-set custon name, else use a default
+            try:
+                name = self.config['CustomFields'][f'field_{custom_field}']
+            except NonExistentKey:
+                name = f'Field {custom_field}'
+
             column_list.append(
-                {'name': f'custom_field_{custom_field}', 
-                 'label': f'custom_field_{custom_field}',
+                {'name': f'custom_{custom_field}',
+                 'label': name,
                  'field': f'custom_{custom_field}',
                  'sortable': True, 
                  'style': 'text-wrap: wrap'}
