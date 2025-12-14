@@ -16,6 +16,8 @@ import yaml
 CLIENT_NAME = 'FBM3334Client/0.2-SQLite'
 REGEX_STRING = r'^\s*(?:the|a|el|la|los|las|un|una|le|la|les|un|une|il|lo|la|gli|le|ein|eine)\s+'
 
+
+
 @dataclass
 class PaginatedReleaseRequest:
     '''
@@ -37,6 +39,8 @@ class DiscogsManager:
     '''
     Wrapper class for Discogs API interactions and SQLite data management.
     '''
+
+    BLANKS_LABEL = '[Blanks]'
 
     def __init__(self):
         self.settings = {}
@@ -1052,6 +1056,46 @@ class DiscogsManager:
             # fetchall() returns a list of Row objects (which behave like tuples).
             # We use a list comprehension to extract the first (and only) column value (the format string).
             return [row[0] for row in cursor.fetchall()]
+        
+    def get_all_custom_field_values(self) -> Dict[int, List[str]]:
+        '''
+        Fetches all unique values for each custom field from the DB, 
+        including a special (Blanks) option for NULL/empty values.
+        
+        :returns: A dictionary mapping field_id (int) to a list of unique values (str).
+        :rtype: Dict[int, List[str]]
+        '''
+        custom_field_data = {}
+        with self.get_db_connection() as conn:
+            for field_id in self.get_custom_field_ids_set():
+                table_name = f'custom_field_{field_id}'
+                
+                # Fetch all values, including NULL/empty
+                query = f'''
+                SELECT DISTINCT
+                    field_value
+                FROM {table_name}
+                ORDER BY field_value ASC;
+                '''
+                cursor = conn.execute(query)
+                
+                values = []
+                has_blanks = False
+                for row in cursor.fetchall():
+                    value = row[0]
+                    print(row, value)
+                    if value is None or (isinstance(value, str) and value.strip() == ''):
+                        # Found a blank or NULL value
+                        has_blanks = True
+                    else:
+                        # Add non-blank values
+                        values.append(value)
+
+                
+                values.insert(0, self.BLANKS_LABEL) # Add it at the start
+                        
+                custom_field_data[field_id] = values
+        return custom_field_data
         
     def toggle_discogs_connection(self) -> bool:
         '''
