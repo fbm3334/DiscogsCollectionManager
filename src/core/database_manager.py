@@ -1,113 +1,33 @@
-'''
-backend.py
-
-Backend logic for connecting to Discogs and fetching user collection data.
-'''
-
 import os
 import sqlite3
-import re
 from contextlib import contextmanager
-from dataclasses import dataclass
+from typing import Dict, List
 
-import discogs_client as dc
-import yaml
+from core.core_classes import PaginatedReleaseRequest
 
-CLIENT_NAME = 'FBM3334Client/0.2-SQLite'
-REGEX_STRING = r'^\s*(?:the|a|el|la|los|las|un|una|le|la|les|un|une|il|lo|la|gli|le|ein|eine)\s+'
-
-
-
-@dataclass
-class PaginatedReleaseRequest:
+class DatabaseManager:
     '''
-    Paginated release request class.
+    Database manager class for maintaining and getting data from the SQLite
+    database.
     '''
-    page: int = 0
-    page_size: int = 10
-    sort_by: str = 'artist'
-    desc: bool = True
-    search_query: str = ""
-    artist_ids: list[int] | None = None
-    genre_ids: list[int] | None = None
-    style_ids: list[int] | None = None
-    label_ids: list[int] | None = None
-    formats: list[str] | None = None
-    custom_field_filters: dict[int, list[str]] | None = None
-
-class DiscogsManager:
-    '''
-    Wrapper class for Discogs API interactions and SQLite data management.
-    '''
-
+    CACHE_FOLDER = 'cache'
     BLANKS_LABEL = '[Blanks]'
 
     def __init__(self):
-        self.settings = {}
-        self.pat = None
-        self.client = None
-        self.user = None
-        self.load_token()
+        '''
+        Class initialisation function
+        '''
         self.custom_ids = set()
-
-        # Initialize DB
-        self.init_db()
-
-        # Load the custom fields from the database
-        self._load_custom_field_ids_from_db()
-
-        self.progress_stage = ""
-
-    def load_token(self):
-        '''
-        Load personal access token from secrets YAML file.
-        '''
-        try:
-            with open('secrets.yml', 'r', encoding='utf-8') as file:
-                secrets = yaml.safe_load(file)
-                self.pat = secrets.get('personal_access_token')
-        except FileNotFoundError:
-            self.pat = None
-
-    def save_token(self, token):
-        '''
-        Save personal access token to secrets YAML file.
-
-        :param token: Personal access token
-        '''
-        self.pat = token
-        with open('secrets.yml', 'w', encoding='utf-8') as file:
-            file.write(f"personal_access_token: {token}\n")
-
-    def connect_client(self):
-        '''
-        Connect to Discogs API using the personal access token.
-        '''
-        if not self.pat:
-            raise ValueError("No Personal Access Token found.")
-        self.client = dc.Client(CLIENT_NAME, user_token=self.pat)
-
-    def identity(self):
-        '''
-        Fetch and return the user identity from Discogs.
-
-        :return: Discogs user identity.
-        '''
-        if not self.client:
-            raise ValueError("Client not connected.")
-        self.user = self.client.identity()
-        return self.user
-
+        
     def get_db_path(self):
         '''
         Get the path to the SQLite database file.
         
         :return: Path to SQLite database file.
         '''
-        folder = self.settings.get('cache_folder', 'cache')
-        os.makedirs(folder, exist_ok=True)
-        return os.path.join(folder, 'collection.db')
-
+        os.makedirs(self.CACHE_FOLDER, exist_ok=True)
+        return os.path.join(self.CACHE_FOLDER, 'collection.db')
+    
     @contextmanager
     def get_db_connection(self):
         '''
@@ -122,18 +42,18 @@ class DiscogsManager:
 
     def init_db(self):
         '''
-        Create normalised tables if they don't exist.
+        Initialise the database by creating normalised tables if they don't
+        exist.
         '''
-        with open('table_schema.txt', 'r', encoding='utf-8') as schema_file:
+        with open('core/table_schema.txt', 'r', encoding='utf-8') as schema_file:
             schema = schema_file.read()
             with self.get_db_connection() as conn:
                 conn.executescript(schema)
                 conn.commit()
 
-    # --- Data Ingestion ---
     def _insert_lookup(self, cursor, table, name_col, value):
         '''
-        Helper to insert into lookup tables and return ID.
+        Helper to insert a value into lookup tables and return ID.
 
         :param cursor: SQLite cursor
         :param table: Table name
@@ -141,7 +61,8 @@ class DiscogsManager:
         :param value: Value to insert/look up
         :return: ID of the inserted or existing row
         '''
-        if not value: return None
+        if not value:
+            return None
         
         # Try to find existing
         cursor.execute(f"SELECT id FROM {table} WHERE {name_col} = ?", (value,))
@@ -203,7 +124,7 @@ class DiscogsManager:
                 except ValueError:
                     # Ignore tables that don't follow the naming convention
                     continue
-    
+
     def get_custom_field_ids_set(self) -> set:
         '''
         Get the custom field IDs from the database.
@@ -212,7 +133,7 @@ class DiscogsManager:
         :rtype: set
         '''
         return self.custom_ids
-
+    
     def _save_artist_to_artist_db(self, conn, basic_info: dict):
         '''
         Sort the release into the relevant artist databases.
@@ -224,7 +145,6 @@ class DiscogsManager:
         rel_id = basic_info.get('id')
         if not rel_id:
             return
-
 
         cursor = conn.cursor()
         # Clear old links for this release to prevent duplication on updates
@@ -240,7 +160,7 @@ class DiscogsManager:
             )
         
         conn.commit()
-
+    
     def _save_style_genre_label_to_dbs(self, conn, basic_info: dict):
         '''
         Save the style, genre and label info into relevant databases.
@@ -324,24 +244,6 @@ class DiscogsManager:
         self._save_style_genre_label_to_dbs(conn, basic_info)
         self._save_custom_notes_to_dbs(conn, basic_info, notes)
 
-    def get_custom_field_ids(self, releases_list: list[dc.CollectionItemInstance]) -> set:
-        '''
-        Extract custom field IDs from a list of CollectionItemInstance objects.
-
-        :param releases_list: List of CollectionItemInstance objects
-        :type releases_list: list[dc.CollectionItemI`nstance]
-        :return: Set of custom field IDs
-        :rtype: set
-        '''
-        custom_field_ids = set()
-        for item in releases_list:
-            if item.notes:
-                for note in item.notes:
-                    custom_field_id = note['field_id']
-                    print(custom_field_id)
-                    custom_field_ids.add(custom_field_id)
-        return custom_field_ids
-    
     def create_custom_field_db(self, conn, field_id: int):
         '''
         Create a table for storing custom field values.
@@ -360,47 +262,19 @@ class DiscogsManager:
         '''
         conn.executescript(schema)
         conn.commit()
-
-    def fetch_collection(self, progress_callback=None):
+    
+    def add_releases_to_db(self, release_list: list):
         '''
-        Fetches the collection from Discogs and updates the databases.
-        :param progress_callback: Optional callback to report progress
-        :type progress_callback: callable
-        '''
+        Add a list of releases fetched from Discogs to the database.
         
-        # API Download
-        if not self.client:
-            self.connect_client()
-        if not self.user:
-            self.identity()
-
-        print("Fetching from Discogs API...")
-        releases_to_process = self.user.collection_folders[0].releases
-        total_releases = len(releases_to_process)
-
-        custom_field_ids = set()
-
+        :param release_list: List of releases to add.
+        :type release_list: list
+        '''
         with self.get_db_connection() as conn:
-            for i, item in enumerate(releases_to_process):
-                # item.data contains exactly what we need
-                # We don't need self.client.release() usually, unless we need extra deep data
-                basic_info = item.data.get('basic_information')
-                if basic_info:
-                    self.save_release_to_db(conn, basic_info, item.notes)
+            for basic_info, notes in release_list:
+                self.save_release_to_db(conn, basic_info, notes)
 
-                if item.notes:
-                    for note in item.notes:
-                        custom_field_id = note['field_id']
-                        custom_field_ids.add(custom_field_id)
-                
-                if progress_callback:
-                    progress_callback(i + 1, total_releases)
-
-        self.custom_ids = custom_field_ids
-        
-        print('Finished!')
-
-    def _get_artists_missing_sort_name(self, conn):
+    def get_artists_missing_sort_name(self):
         '''
         Fetches artist IDs and names from the DB that lack a sort_name.
         
@@ -408,129 +282,348 @@ class DiscogsManager:
         :return: List of artists missing a sort name.
         :rtype: list
         '''
-        # Assumes the connection/cursor supports dict-like access for rows
-        cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT id, name FROM artists WHERE sort_name IS NULL")
-        return cursor.fetchall()
-        
-    def _fetch_sort_name_from_api(self, conn, artist_id, default_name):
+        with self.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT id, name FROM artists WHERE sort_name IS NULL")
+            return cursor.fetchall()
+    
+    def get_first_release_from_artist(self, artist_id):
         '''
-        Uses the Discogs client to find the accurate sort name.
-
-        :param conn: Database connection
-        :param artist_id: Artist ID
-        :param default_name: Default name
-        :return: Sort name
+        Get the first release with the matching artist ID.
         '''
+        with self.get_db_connection() as conn:
+            return conn.execute(
+                "SELECT release_id FROM release_artists WHERE artist_id = ? LIMIT 1", 
+                (artist_id,)
+            ).fetchone()
         
-        # Fetch artist details from API (Rate limits apply)
-        artist_obj = self.client.artist(artist_id)
-        
-        # Find a related release to get the 'artists_sort' field
-
-        res = conn.execute(
-            "SELECT release_id FROM release_artists WHERE artist_id = ? LIMIT 1", 
-            (artist_id,)
-        ).fetchone()
-        
-        if res:
-            rel = self.client.release(res[0])
-            rel.refresh() # Ensure full data
-            return rel.data.get('artists_sort', default_name)
-        else:
-            return default_name
-        
-    def _process_and_batch_updates(self, conn, artists_to_check, progress_callback):
-        '''
-        Iterates through artists, determines sort names, and commits in batches.
-
-        :param conn: Database connection
-        :param artists_to_check: Artists to check
-        :param progress_callback: Optional progress callback
-        '''
-        
-        total = len(artists_to_check)
-        updates = [] # Store tuples (sort_name, id)
-        
-        for i, row in enumerate(artists_to_check):
-            a_id, a_name = row['id'], row['name']
-            
-            # Determine the sort name using the refactored helper
-            sort_name = self._determine_sort_name(conn, a_id, a_name)
-            updates.append((sort_name, a_id))
-            
-            if progress_callback:
-                progress_callback(i + 1, total)
-                
-            # Batch update every 10
-            if len(updates) >= 10:
-                self._commit_batch_updates(conn, updates)
-                updates = []
-                
-        # Commit remaining
-        if updates:
-            self._commit_batch_updates(conn, updates)
-
-    def _commit_batch_updates(self, conn, updates_batch):
+    def commit_batch_updates(self, updates_batch):
         '''
         Executes the database update for a given batch of (sort_name, id) tuples.
 
-        :param conn: Database connection
         :param updates_batch: Batch of tuples
         '''
-        conn.executemany("UPDATE artists SET sort_name = ? WHERE id = ?", updates_batch)
-        conn.commit()
-        
-    def _determine_sort_name(self, conn, artist_id, artist_name):
-        '''
-        Determines the correct sort name, using simple check or API fetch.
+        with self.get_db_connection() as conn:
+            conn.executemany("UPDATE artists SET sort_name = ? WHERE id = ?", updates_batch)
+            conn.commit()
 
-        :param conn: Database connection.
-        :param artist_id: Artist ID.
-        :param artist_name: Artist name.
+    def delete_database(self):
         '''
-        
-        thorough = self.settings.get('thorough_name_fetch', False)
-        
-        # 1. Simple Check (Fast Path)
-        if not thorough and not self.check_artist_prefix(artist_name):
-            return artist_name  # Sort name is the regular name
-        
-        # 2. API Fetch (Slow Path)
-        try:
-            return self._fetch_sort_name_from_api(conn, artist_id, artist_name)
-        except Exception as e:
-            print(f"Error fetching sort name for {artist_name}: {e}")
-            return artist_name # Fallback to regular name on error
-    
-
-    def fetch_artist_sort_names(self, progress_callback=None):
+        Delete the database.
         '''
-        Coordinates the fetching and updating of artist sort names.
-        '''
-        with self.get_db_connection() as conn:            
-            artists_to_check = self._get_artists_missing_sort_name(conn)
-            if not artists_to_check:
-                return
-                
-            if not self.client:
-                self.connect_client()
-            
-            self._process_and_batch_updates(conn, artists_to_check, progress_callback)
-        
-
-    def check_artist_prefix(self, artist_name):
-        '''
-        Check the artist prefix against a regular expression,
-        '''
-        return re.match(REGEX_STRING, artist_name, re.IGNORECASE) is not None
-    
-    def clear_caches(self):
         db_path = self.get_db_path()
         if os.path.exists(db_path):
             os.remove(db_path)
-            print("Database cleared.")
 
+    def _build_order_clause(self, sort_by: str, desc: bool) -> str:
+        '''
+        Constructs the SQL ORDER BY clause with safe column selection.
+
+        :param sort_by: The column name to sort by.
+        :type sort_by: str
+        :param desc: If True, sort descending; otherwise, ascending.
+        :type desc: bool
+        :returns: The complete SQL fragment for the ORDER BY clause.
+        :rtype: str
+        '''
+        
+        order_dir = 'DESC' if desc else 'ASC'
+
+        # Check if the sort is by a custom field
+        if sort_by.startswith('custom_') and sort_by.replace('custom_', '').isdigit():
+            return f'{sort_by} COLLATE NOCASE {order_dir}'
+        
+        allowed_sorts = ['title', 'year', 'date_added', 'id', 'artist']
+        
+        # Default to 'date_added' if input is invalid
+        if sort_by not in allowed_sorts:
+            sort_by = 'date_added'
+
+        if sort_by == 'artist':
+            # Use sort_name for artist sorting (collation is typically needed for SQLite text sorting)
+            return f"COALESCE(a.sort_name, a.name) COLLATE NOCASE {order_dir}"
+        else:
+            return f"r.{sort_by} {order_dir}"
+        
+    def _build_in_condition(self, column: str, values: list, conditions: list, params: list) -> None:
+        '''
+        Helper for simple filters like Artist ID or Format, using IN (?).
+
+        :param column: The fully qualified SQL column name (e.g., 'a.id' or 'r.format').
+        :type column: str
+        :param values: A list of values (e.g., IDs or strings) to be included in the IN clause.
+                       If the list is empty or None, no condition is added.
+        :type values: list
+        :param conditions: The main list of SQL WHERE condition strings to append to.
+        :type conditions: list
+        :param params: The main list of query parameters to append the filter values to.
+        :type params: list
+        :rtype: None
+        '''
+        if values:
+            placeholders = ', '.join(['?'] * len(values))
+            condition = f'{column} IN ({placeholders})'
+            conditions.append(condition)
+            params.extend(values)
+
+    def _build_subquery_in_condition(self, table: str, column: str, ids: list[int], conditions: list, params: list) -> None:
+        '''
+        Helper for many-to-many filters (Genre, Style, Label) using subqueries.
+
+        This is necessary because these filters rely on junction tables (e.g., release_genres).
+        It implements OR logic: find releases associated with ANY of the provided IDs.
+
+        :param table: The name of the junction table (e.g., 'release_genres').
+        :type table: str
+        :param column: The name of the ID column within the junction table (e.g., 'genre_id').
+        :type column: str
+        :param ids: A list of primary keys (IDs) to filter by.
+        :type ids: list[int]
+        :param conditions: The main list of SQL WHERE condition strings to append to.
+        :type conditions: list
+        :param params: The main list of query parameters to append the filter IDs to.
+        :type params: list
+        :rtype: None
+        '''
+        if ids:
+            placeholders = ', '.join(['?'] * len(ids))
+            condition = f"""
+            r.id IN (
+                SELECT release_id FROM {table} 
+                WHERE {column} IN ({placeholders})
+            )
+            """
+            conditions.append(condition)
+            params.extend(ids)
+
+    def _handle_custom_field_filter(self, field_id: int, values: list[str], conditions: list, params: list) -> None:
+        '''
+        Handles the complex logic for a single custom field filter, including special 
+        handling for the '[Blanks]' option.
+
+        This method generates a combined condition using OR logic: (Blanks OR Value1 OR Value2).
+        It assumes the main query has already LEFT JOINed the necessary custom field table 
+        using the alias 'cf{field_id}'.
+
+        :param field_id: The ID of the custom field being filtered.
+        :type field_id: int
+        :param values: A list of desired field values, which may include the special 
+                       '[Blanks]' constant.
+        :type values: list[str]
+        :param conditions: The main list of SQL WHERE condition strings to append to.
+        :type conditions: list
+        :param params: The main list of query parameters to append the specific field values to.
+        :type params: list
+        :rtype: None
+        '''
+        # Implementation remains the same:
+        if not values:
+            return
+
+        alias = f'cf{field_id}'
+        
+        filtered_values = [v for v in values if v != self.BLANKS_LABEL]
+        is_blanks_selected = self.BLANKS_LABEL in values
+        
+        combined_condition = []
+        
+        # A. Blanks Condition
+        if is_blanks_selected:
+            # Matches releases where the field is missing (NULL join) or the value is empty/null.
+            blanks_condition = f'({alias}.release_id IS NULL OR {alias}.field_value IS NULL OR TRIM({alias}.field_value) = \'\')'
+            combined_condition.append(blanks_condition)
+
+        # B. Specific Value Condition
+        if filtered_values:
+            placeholders = ', '.join(['?'] * len(filtered_values))
+            value_condition = f'{alias}.field_value IN ({placeholders})'
+            combined_condition.append(value_condition)
+            params.extend(filtered_values)
+        
+        # C. Combine Conditions (OR logic)
+        if combined_condition:
+            custom_field_condition = f'({" OR ".join(combined_condition)})'
+            conditions.append(custom_field_condition)
+    
+    def _build_where_clause(self, search_query: str, artist_ids: list[int] | None, genre_ids: list[int] | None, style_ids: list[int] | None, label_ids: list[int] | None, formats: list[str] | None, custom_field_filters: dict[int, list[str]] | None) -> tuple[str, list]:
+        '''
+        Constructs the SQL WHERE clause and prepares search parameters, now including Genre, Style, and Label filters.
+        '''
+        conditions = []
+        search_params = []
+        
+        # 1. General Search Query
+        if search_query:
+            search_condition = '''
+            (
+                r.title LIKE ? OR r.year LIKE ? OR a.name LIKE ? OR 
+                l.name LIKE ? OR rl.catno LIKE ? OR s.name LIKE ?
+            )
+            '''
+            conditions.append(search_condition)
+            term = f"%{search_query}%"
+            search_params.extend([term] * 6)
+            
+        # 2. Artist Filter (Simple IN condition)
+        self._build_in_condition(
+            column='a.id', values=artist_ids, conditions=conditions, params=search_params
+        )
+            
+        # 3. Genre Filter (Subquery IN condition)
+        self._build_subquery_in_condition(
+            table='release_genres', column='genre_id', ids=genre_ids, conditions=conditions, params=search_params
+        )
+
+        # 4. Style Filter (Subquery IN condition)
+        self._build_subquery_in_condition(
+            table='release_styles', column='style_id', ids=style_ids, conditions=conditions, params=search_params
+        )
+
+        # 5. Label Filter (Subquery IN condition)
+        self._build_subquery_in_condition(
+            table='release_labels', column='label_id', ids=label_ids, conditions=conditions, params=search_params
+        )
+
+        # 6. Format Filter (Simple IN condition)
+        self._build_in_condition(
+            column='r.format', values=formats, conditions=conditions, params=search_params
+        )
+
+        # 7. Custom Field Filters
+        if custom_field_filters:
+            for field_id, values in custom_field_filters.items():
+                self._handle_custom_field_filter(
+                    field_id=field_id, values=values, conditions=conditions, params=search_params
+                )
+        
+        # Final Assembly
+        if not conditions:
+            return "", []
+
+        # Combine all conditions with AND
+        where_sql = 'WHERE ' + ' AND '.join(conditions)
+        
+        return where_sql, search_params
+    
+    def _build_custom_field_joins(self) -> tuple[str, str]:
+        '''
+        Builds the SELECT and JOIN clauses for all known custom fields.
+
+        :returns: A tuple (custom_select_sql, custom_join_sql)
+        :rtype: tuple[str, str]
+        '''
+        custom_select_parts = []
+        custom_join_parts = []
+
+        for field_id in self.custom_ids:
+            table_name = f'custom_field_{field_id}'
+            alias = f'cf{field_id}'
+
+            # SELECT part is only needed for the main query
+            custom_select_parts.append(f'{alias}.field_value AS custom_{field_id}')
+
+            # JOIN part is needed for both count and main queries
+            custom_join_parts.append(f'''
+                LEFT JOIN {table_name} {alias} ON r.id = {alias}.release_id
+            ''')
+            
+        custom_select_sql = ',\n' + ',\n'.join(custom_select_parts) if custom_select_parts else ''
+        custom_join_sql = '\n'.join(custom_join_parts)
+        
+        return custom_select_sql, custom_join_sql
+    
+    def _get_filtered_count(self, conn, where_sql: str, search_params: list) -> int:
+        '''
+        Executes the COUNT query to get the total number of rows matching the filter.
+
+        :param conn: The active database connection object.
+        :type conn: object
+        :param where_sql: The WHERE SQL fragment, including 'WHERE' if present.
+        :type where_sql: str
+        :param search_params: The list of parameters for the search filter.
+        :type search_params: list
+        :returns: The total number of rows matching the criteria.
+        :rtype: int
+        '''
+        # Get the required custom field joins
+        _, custom_join_sql = self._build_custom_field_joins()
+
+        count_query = f'''
+        SELECT COUNT(DISTINCT r.id) 
+        FROM releases r
+        LEFT JOIN release_artists ra ON r.id = ra.release_id
+        LEFT JOIN artists a ON ra.artist_id = a.id
+        LEFT JOIN release_labels rl ON r.id = rl.release_id
+        LEFT JOIN labels l ON rl.label_id = l.id
+        LEFT JOIN release_genres gs on r.id = gs.release_id
+        LEFT JOIN genres g on gs.genre_id = g.id
+        LEFT JOIN release_styles rs on r.id = rs.release_id
+        LEFT JOIN styles s on rs.style_id = s.id
+        {custom_join_sql}
+        {where_sql}
+        '''
+        # Pass search_params to filter the count correctly
+        return conn.execute(count_query, search_params).fetchone()[0]
+    
+    def _get_pagination_limits(self, page_size: int, total_rows: int, offset: int) -> tuple[int, int]:
+        '''
+        Calculates the final LIMIT and OFFSET values, handling the 'fetch all' case.
+
+        :param page_size: The requested items per page.
+        :type page_size: int
+        :param total_rows: The total number of rows available.
+        :type total_rows: int
+        :param offset: The calculated starting offset.
+        :type offset: int
+        :returns: A tuple of (limit, offset) to use in the main query.
+        :rtype: tuple[int, int]
+        '''
+        if page_size == 0:
+            # Case: Fetch all releases
+            return total_rows, 0
+        else:
+            return page_size, offset
+        
+    def _build_main_query(self, where_sql: str, order_clause: str) -> str:
+        '''
+        Constructs the main SQL query for fetching release data.
+
+        :param where_sql: The WHERE SQL fragment, including 'WHERE' if present.
+        :type where_sql: str
+        :param order_clause: The complete SQL fragment for the ORDER BY clause.
+        :type order_clause: str
+        :returns: The full parameterized SQL query string.
+        :rtype: str
+        '''
+        # Build the SELECT and JOIN clauses for the custom fields
+        custom_select_sql, custom_join_sql = self._build_custom_field_joins()
+
+        return f'''
+        SELECT 
+            r.id,
+            REPLACE(GROUP_CONCAT(DISTINCT a.name), ',', ', ') as artist_name,
+            r.title, 
+            REPLACE(GROUP_CONCAT(DISTINCT l.name), ',', ', ') as label_name,
+            REPLACE(GROUP_CONCAT(DISTINCT g.name), ',', ', ') as genres,
+            REPLACE(GROUP_CONCAT(DISTINCT s.name), ',', ', ') as style_name,
+            rl.catno, r.year, r.release_url, r.format, r.thumb_url
+            {custom_select_sql}
+        FROM releases r
+        LEFT JOIN release_artists ra ON r.id = ra.release_id
+        LEFT JOIN artists a ON ra.artist_id = a.id
+        LEFT JOIN release_labels rl ON r.id = rl.release_id
+        LEFT JOIN release_genres gs on r.id = gs.release_id
+        LEFT JOIN genres g on gs.genre_id = g.id
+        LEFT JOIN labels l ON rl.label_id = l.id
+        LEFT JOIN release_styles rs on r.id = rs.release_id
+        LEFT JOIN styles s on rs.style_id = s.id
+        {custom_join_sql}
+        {where_sql}
+        GROUP BY r.id
+        ORDER BY {order_clause}
+        LIMIT ? OFFSET ?
+        '''
+    
     def get_releases_paginated(self, request: PaginatedReleaseRequest):
         '''
         Coordinates fetching releases with full support for search, sorting, and pagination.
@@ -579,282 +672,6 @@ class DiscogsManager:
 
         print(rows)
         return rows, total_rows
-    
-    def _build_custom_field_joins(self) -> tuple[str, str]:
-        '''
-        Builds the SELECT and JOIN clauses for all known custom fields.
-
-        :returns: A tuple (custom_select_sql, custom_join_sql)
-        :rtype: tuple[str, str]
-        '''
-        custom_select_parts = []
-        custom_join_parts = []
-
-        for field_id in self.custom_ids:
-            table_name = f'custom_field_{field_id}'
-            alias = f'cf{field_id}'
-
-            # SELECT part is only needed for the main query
-            custom_select_parts.append(f'{alias}.field_value AS custom_{field_id}')
-
-            # JOIN part is needed for both count and main queries
-            custom_join_parts.append(f'''
-                LEFT JOIN {table_name} {alias} ON r.id = {alias}.release_id
-            ''')
-            
-        custom_select_sql = ',\n' + ',\n'.join(custom_select_parts) if custom_select_parts else ''
-        custom_join_sql = '\n'.join(custom_join_parts)
-        
-        return custom_select_sql, custom_join_sql
-
-    def _build_order_clause(self, sort_by: str, desc: bool) -> str:
-        '''
-        Constructs the SQL ORDER BY clause with safe column selection.
-
-        :param sort_by: The column name to sort by.
-        :type sort_by: str
-        :param desc: If True, sort descending; otherwise, ascending.
-        :type desc: bool
-        :returns: The complete SQL fragment for the ORDER BY clause.
-        :rtype: str
-        '''
-        
-        order_dir = 'DESC' if desc else 'ASC'
-
-        # Check if the sort is by a custom field
-        if sort_by.startswith('custom_') and sort_by.replace('custom_', '').isdigit():
-            return f'{sort_by} COLLATE NOCASE {order_dir}'
-        
-        allowed_sorts = ['title', 'year', 'date_added', 'id', 'artist']
-        
-        # Default to 'date_added' if input is invalid
-        if sort_by not in allowed_sorts:
-            sort_by = 'date_added'
-
-        if sort_by == 'artist':
-            # Use sort_name for artist sorting (collation is typically needed for SQLite text sorting)
-            return f"COALESCE(a.sort_name, a.name) COLLATE NOCASE {order_dir}"
-        else:
-            return f"r.{sort_by} {order_dir}"
-
-    def _build_where_clause(self, search_query: str, artist_ids: list[int] | None, genre_ids: list[int] | None, style_ids: list[int] | None, label_ids: list[int] | None, formats: list[str] | None, custom_field_filters: dict[int, list[str]] | None) -> tuple[str, list]:
-        '''
-        Constructs the SQL WHERE clause and prepares search parameters, now including Genre, Style, and Label filters.
-        '''
-        conditions = []
-        search_params = []
-        
-        # 1. General Search Query (UNCHANGED)
-        if search_query:
-            search_condition = '''
-            (
-                r.title LIKE ? OR
-                r.year LIKE ? OR
-                a.name LIKE ? OR
-                l.name LIKE ? OR
-                rl.catno LIKE ? OR
-                s.name LIKE ?
-            )
-            '''
-            conditions.append(search_condition)
-            term = f"%{search_query}%"
-            search_params.extend([term, term, term, term, term, term])
-            
-        # 2. Multiple Artist Filter (MODIFIED)
-        if artist_ids:
-            # Create a string of placeholders for the IN clause: '?, ?, ?'
-            placeholders = ', '.join(['?'] * len(artist_ids))
-
-            # Use 'a.id IN (...)' to filter by any of the selected artist IDs
-            artist_condition = f'a.id IN ({placeholders})'
-            conditions.append(artist_condition)
-            
-            # The list of artist_ids are the parameters for the IN clause
-            search_params.extend(artist_ids)
-            
-        if genre_ids:
-            placeholders = ', '.join(['?'] * len(genre_ids))
-            
-            # Use a subquery to find releases associated with the selected genres.
-            # We use GROUP BY and COUNT to ensure the release matches ALL selected genres 
-            # if that were the requirement, but typically it's OR logic (match ANY selected genre).
-            # We use a simpler EXISTS/IN here for OR logic within the group.
-            genre_condition = f"""
-            r.id IN (
-                SELECT release_id FROM release_genres 
-                WHERE genre_id IN ({placeholders})
-            )
-            """
-            conditions.append(genre_condition)
-            search_params.extend(genre_ids)
-
-        # 4. Multiple Style Filter (NEW)
-        if style_ids:
-            placeholders = ', '.join(['?'] * len(style_ids))
-            style_condition = f"""
-            r.id IN (
-                SELECT release_id FROM release_styles 
-                WHERE style_id IN ({placeholders})
-            )
-            """
-            conditions.append(style_condition)
-            search_params.extend(style_ids)
-
-        # 5. Multiple Label Filter (NEW)
-        if label_ids:
-            placeholders = ', '.join(['?'] * len(label_ids))
-            label_condition = f"""
-            r.id IN (
-                SELECT release_id FROM release_labels 
-                WHERE label_id IN ({placeholders})
-            )
-            """
-            conditions.append(label_condition)
-            search_params.extend(label_ids)
-
-        if formats:
-            # The format is a column in the main 'releases' table
-            placeholders = ', '.join(['?'] * len(formats))
-            format_condition = f"r.format IN ({placeholders})"
-            conditions.append(format_condition)
-            search_params.extend(formats) # Pass the format strings as parameters
-
-        if custom_field_filters:
-            BLANKS_LABEL = "[Blanks]" # Define the constant locally for clarity/safety
-
-            for field_id, values in custom_field_filters.items():
-                if values:
-                    table_name = f'custom_field_{field_id}'
-                    alias = f'cf{field_id}' # We must use the alias from the main query!
-                    
-                    # 1. Separate the "Blanks" option from actual values
-                    filtered_values = [v for v in values if v != BLANKS_LABEL]
-                    is_blanks_selected = BLANKS_LABEL in values
-                    
-                    combined_condition = []
-                    
-                    # A. Blanks Condition
-                    if is_blanks_selected:
-                        # This condition matches releases that either:
-                        # 1. Do not have a row in the custom field table (cfX.release_id IS NULL)
-                        # 2. Have a row, but the value is NULL or empty/whitespace.
-                        blanks_condition = f'({alias}.release_id IS NULL OR {alias}.field_value IS NULL OR TRIM({alias}.field_value) = \'\')'
-                        combined_condition.append(blanks_condition)
-
-                    # B. Specific Value Condition
-                    if filtered_values:
-                        # User wants releases with one of the specific field values
-                        placeholders = ', '.join(['?'] * len(filtered_values))
-                        value_condition = f'{alias}.field_value IN ({placeholders})'
-                        combined_condition.append(value_condition)
-                        # Append the parameters for the IN clause to the main search_params list
-                        search_params.extend(filtered_values)
-                    
-                    # C. Combine Conditions
-                    if combined_condition:
-                        # Use OR logic between the Blanks check and the specific value checks
-                        custom_field_condition = f'({" OR ".join(combined_condition)})'
-                        conditions.append(custom_field_condition)
-        
-        if not conditions:
-            return "", []
-
-        # Combine all conditions with AND (AND logic between filter groups: Genre AND Style AND Label)
-        where_sql = 'WHERE ' + ' AND '.join(conditions)
-        
-        return where_sql, search_params
-
-    def _get_filtered_count(self, conn, where_sql: str, search_params: list) -> int:
-        '''
-        Executes the COUNT query to get the total number of rows matching the filter.
-
-        :param conn: The active database connection object.
-        :type conn: object
-        :param where_sql: The WHERE SQL fragment, including 'WHERE' if present.
-        :type where_sql: str
-        :param search_params: The list of parameters for the search filter.
-        :type search_params: list
-        :returns: The total number of rows matching the criteria.
-        :rtype: int
-        '''
-        # Get the required custom field joins
-        _, custom_join_sql = self._build_custom_field_joins()
-
-        count_query = f'''
-        SELECT COUNT(DISTINCT r.id) 
-        FROM releases r
-        LEFT JOIN release_artists ra ON r.id = ra.release_id
-        LEFT JOIN artists a ON ra.artist_id = a.id
-        LEFT JOIN release_labels rl ON r.id = rl.release_id
-        LEFT JOIN labels l ON rl.label_id = l.id
-        LEFT JOIN release_genres gs on r.id = gs.release_id
-        LEFT JOIN genres g on gs.genre_id = g.id
-        LEFT JOIN release_styles rs on r.id = rs.release_id
-        LEFT JOIN styles s on rs.style_id = s.id
-        {custom_join_sql}
-        {where_sql}
-        '''
-        # Pass search_params to filter the count correctly
-        return conn.execute(count_query, search_params).fetchone()[0]
-
-    def _get_pagination_limits(self, page_size: int, total_rows: int, offset: int) -> tuple[int, int]:
-        '''
-        Calculates the final LIMIT and OFFSET values, handling the 'fetch all' case.
-
-        :param page_size: The requested items per page.
-        :type page_size: int
-        :param total_rows: The total number of rows available.
-        :type total_rows: int
-        :param offset: The calculated starting offset.
-        :type offset: int
-        :returns: A tuple of (limit, offset) to use in the main query.
-        :rtype: tuple[int, int]
-        '''
-        if page_size == 0:
-            # Case: Fetch all releases
-            return total_rows, 0
-        else:
-            return page_size, offset
-
-    def _build_main_query(self, where_sql: str, order_clause: str) -> str:
-        '''
-        Constructs the main SQL query for fetching release data.
-
-        :param where_sql: The WHERE SQL fragment, including 'WHERE' if present.
-        :type where_sql: str
-        :param order_clause: The complete SQL fragment for the ORDER BY clause.
-        :type order_clause: str
-        :returns: The full parameterized SQL query string.
-        :rtype: str
-        '''
-        # Build the SELECT and JOIN clauses for the custom fields
-        custom_select_sql, custom_join_sql = self._build_custom_field_joins()
-
-        return f'''
-        SELECT 
-            r.id,
-            REPLACE(GROUP_CONCAT(DISTINCT a.name), ',', ', ') as artist_name,
-            r.title, 
-            REPLACE(GROUP_CONCAT(DISTINCT l.name), ',', ', ') as label_name,
-            REPLACE(GROUP_CONCAT(DISTINCT g.name), ',', ', ') as genres,
-            REPLACE(GROUP_CONCAT(DISTINCT s.name), ',', ', ') as style_name,
-            rl.catno, r.year, r.release_url, r.format, r.thumb_url
-            {custom_select_sql}
-        FROM releases r
-        LEFT JOIN release_artists ra ON r.id = ra.release_id
-        LEFT JOIN artists a ON ra.artist_id = a.id
-        LEFT JOIN release_labels rl ON r.id = rl.release_id
-        LEFT JOIN release_genres gs on r.id = gs.release_id
-        LEFT JOIN genres g on gs.genre_id = g.id
-        LEFT JOIN labels l ON rl.label_id = l.id
-        LEFT JOIN release_styles rs on r.id = rs.release_id
-        LEFT JOIN styles s on rs.style_id = s.id
-        {custom_join_sql}
-        {where_sql}
-        GROUP BY r.id
-        ORDER BY {order_clause}
-        LIMIT ? OFFSET ?
-        '''
     
     def get_all_artists(self):
         '''
@@ -1056,7 +873,7 @@ class DiscogsManager:
             # fetchall() returns a list of Row objects (which behave like tuples).
             # We use a list comprehension to extract the first (and only) column value (the format string).
             return [row[0] for row in cursor.fetchall()]
-        
+
     def get_all_custom_field_values(self) -> Dict[int, List[str]]:
         '''
         Fetches all unique values for each custom field from the DB, 
@@ -1096,23 +913,4 @@ class DiscogsManager:
                         
                 custom_field_data[field_id] = values
         return custom_field_data
-        
-    def toggle_discogs_connection(self) -> bool:
-        '''
-        Toggle the Discogs connection and return the status as a boolean.
-
-        :return: Boolean of the Discogs connection status.
-        :rtype: bool
-        '''
-
-        if self.user is not None:
-            self.user = None
-            return False
-        else:
-            # Connect to API
-            self.connect_client()
-            self.identity()
-            if self.user is not None:
-                return True
-            
-        return False
+    

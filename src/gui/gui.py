@@ -7,7 +7,8 @@ import tomlkit as tk
 from tomlkit import TOMLDocument
 from tomlkit.exceptions import NonExistentKey
 
-from core.backend import DiscogsManager, PaginatedReleaseRequest
+from core.discogs_conn import DiscogsConn
+from core.core_classes import PaginatedReleaseRequest
 from gui.gui_classes import SidebarPage, IDFilterDefinition, StringFilterDefinition
 from gui.gui_constants import PAGES, FILTER_DEFINITIONS, STATIC_COLUMNS
 
@@ -23,15 +24,15 @@ class DiscogsSorterGui:
         '''
         Class initialisation method.
         '''
-        self.manager = DiscogsManager()
+        self.backend = DiscogsConn()
 
         self._initialise_state_variables()
         self._perform_initial_fetch()
         self._get_lists_filters()
 
-        self.format_list = self.manager.get_unique_formats()
+        self.format_list = self.backend.db.get_unique_formats()
 
-        self.custom_field_data: Dict[int, List[str]] = self.manager.get_all_custom_field_values()
+        self.custom_field_data: Dict[int, List[str]] = self.backend.db.get_all_custom_field_values()
         self.custom_field_filter_ids: dict[int, list[str]] | None = None 
         
         self.load_toml_config()
@@ -81,7 +82,7 @@ class DiscogsSorterGui:
             sort_by='artist',
             desc=False
         )
-        self.releases, self.num_releases = self.manager.get_releases_paginated(
+        self.releases, self.num_releases = self.backend.db.get_releases_paginated(
             request=initial_request
         )
 
@@ -111,10 +112,10 @@ class DiscogsSorterGui:
         '''
         Create the lists to be used for filtering.
         '''
-        self.artist_list = self._dict_to_list_conversion(self.manager.get_all_artists())
-        self.genre_list = self._dict_to_list_conversion(self.manager.get_all_genres())
-        self.style_list = self._dict_to_list_conversion(self.manager.get_all_styles())
-        self.label_list = self._dict_to_list_conversion(self.manager.get_all_labels())
+        self.artist_list = self._dict_to_list_conversion(self.backend.db.get_all_artists())
+        self.genre_list = self._dict_to_list_conversion(self.backend.db.get_all_genres())
+        self.style_list = self._dict_to_list_conversion(self.backend.db.get_all_styles())
+        self.label_list = self._dict_to_list_conversion(self.backend.db.get_all_labels())
 
     def load_toml_config(self):
         '''
@@ -154,7 +155,7 @@ class DiscogsSorterGui:
         # Safely get the CustomFields configuration section, defaulting to an empty dict
         custom_field_config = self.config.get('CustomFields', {})
         
-        for custom_field_id in self.manager.get_custom_field_ids_set():
+        for custom_field_id in self.backend.db.get_custom_field_ids_set():
             field_key = f'field_{custom_field_id}'
             
             # Use dict.get() for safer lookup instead of try/except
@@ -214,7 +215,7 @@ class DiscogsSorterGui:
             page=0,
             page_size=1
         )
-        _, count = self.manager.get_releases_paginated(request)
+        _, count = self.backend.db.get_releases_paginated(request)
         self.table_data['pagination']['rowsNumber'] = count
         return count
     
@@ -269,7 +270,7 @@ class DiscogsSorterGui:
             custom_field_filters=self.custom_field_filter_ids
         )
 
-        new_rows, count = self.manager.get_releases_paginated(request)
+        new_rows, count = self.backend.db.get_releases_paginated(request)
 
         self.table_data['pagination']['rowsNumber'] = count
 
@@ -410,9 +411,9 @@ class DiscogsSorterGui:
         '''
         self.save_pat_callback()
         try:
-            result = self.manager.toggle_discogs_connection()
+            result = self.backend.toggle_discogs_connection()
             if result is True:
-                ui.notify(f'Discogs connected as user {self.manager.user.username}.')
+                ui.notify(f'Discogs connected as user {self.backend.user.username}.')
             else:
                 ui.notify('Discogs disconnected.')
         except ValueError:
@@ -423,7 +424,7 @@ class DiscogsSorterGui:
         Save the new personal access token.
         '''
         if self.entered_pat is not None:
-            self.manager.save_token(self.entered_pat.value)
+            self.backend.save_token(self.entered_pat.value)
     
     def user_settings_dialog_callback(self):
         '''
@@ -437,15 +438,15 @@ class DiscogsSorterGui:
         Build the settings menu with callbacks etc.
         '''
         with ui.row().classes('items-center justify-between w-70'):
-                if self.manager.user is not None:
-                    ui.label(f'Connected as {self.manager.user.username}')
+                if self.backend.user is not None:
+                    ui.label(f'Connected as {self.backend.user.username}')
                 else:
                     ui.label('Disconnected from Discogs')
                 ui.space()
                 with ui.button(icon='settings'):
                     with ui.menu().props('auto-close'):
                         # Check whether Discogs is connected or not
-                        if self.manager.user is not None:
+                        if self.backend.user is not None:
                             ui.menu_item('Disconnect from Discogs', 
                                             on_click=self.discogs_connection_toggle_callback)
                         else:
@@ -453,6 +454,7 @@ class DiscogsSorterGui:
                         ui.menu_item('User settings', on_click=self.user_settings_dialog_callback)
                         ui.menu_item('Refresh', on_click=self.start_refresh)
 
+    
     async def start_refresh(self):
         '''
         Asynchronously start a refresh from the Discogs API.
@@ -471,10 +473,10 @@ class DiscogsSorterGui:
                 return
             ui.notify('Started refresh...')
             self.progress_stage = "Fetching collection"
-            await run.io_bound(self.manager.fetch_collection, self.update_progress_string)
+            await run.io_bound(self.backend.fetch_collection)
             ui.notify('Fetching artist sort names...')
             self.progress_stage = "Fetching artist sort names"
-            await run.io_bound(self.manager.fetch_artist_sort_names, self.update_progress_string)
+            await run.io_bound(self.backend.fetch_artist_sort_names, self.update_progress_string)
             ui.notify('Refresh complete.')
             self._send_manual_pagination_request()
             self.paginated_table.refresh()
@@ -538,7 +540,7 @@ class DiscogsSorterGui:
             # The IDE knows 'definition' is an IDFilterDefinition here
             
             # Get the actual manager method (e.g., self.manager.get_artist_id_by_name)
-            lookup_method = getattr(self.manager, definition.manager_lookup)
+            lookup_method = getattr(self.backend.db, definition.manager_lookup)
             
             callback = lambda query: self._generic_select_callback(
                 definition.filter_type, lookup_method, query
@@ -656,7 +658,7 @@ class DiscogsSorterGui:
             self.config.add('CustomFields', new_table)
 
         ui.label('Custom Field Names').classes('text-xl font-bold')
-        for label in self.manager.get_custom_field_ids_set():
+        for label in self.backend.db.get_custom_field_ids_set():
             with ui.row().classes('items-center w-full'):
                 ui.label(f'Custom field {label} name')
                 ui.space()
@@ -753,9 +755,9 @@ class DiscogsSorterGui:
         '''
         formatted_string = self.config['Updates']['update_time'].strftime(self.config['Updates']['update_time_display_format'])
         ui.markdown(f'**Last update:** {formatted_string}')
-        if self.manager.user is not None:
+        if self.backend.user is not None:
             ui.icon('link', size='24px').classes('p-0')
-            ui.label(f'Connected to Discogs as {self.manager.user.username}')
+            ui.label(f'Connected to Discogs as {self.backend.user.username}')
         else:
             ui.icon('link_off', size='24px').classes('p-0')
             ui.label('Disconnected from Discogs')
