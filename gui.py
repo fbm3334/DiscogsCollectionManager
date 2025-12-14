@@ -31,6 +31,7 @@ class DiscogsSorterGui:
     '''
     INITIAL_PAGE_SIZE = 20
     INITIAL_PAGE = 0
+    BLANKS_LABEL = '[Blanks]'
 
     def __init__(self, force_fetch: bool = False) -> None:
         '''
@@ -91,6 +92,9 @@ class DiscogsSorterGui:
         self.style_filter_ids = None
         self.label_filter_ids = None
         self.format_selected_list = None
+
+        self.custom_field_data: Dict[int, List[str]] = self.get_all_custom_field_values()
+        self.custom_field_filter_ids: dict[int, list[str]] | None = None 
         #self.user_settings_dialog = self.create_user_settings_dialog()
         
         self.refresh_flag = False
@@ -242,7 +246,8 @@ class DiscogsSorterGui:
             genre_ids=self.genre_filter_ids,
             style_ids=self.style_filter_ids,
             label_ids=self.label_filter_ids,
-            formats=self.format_selected_list
+            formats=self.format_selected_list,
+            custom_field_filters=self.custom_field_filter_ids
         )
         print('Request update!', request)
         new_rows, count = self.manager.get_releases_paginated(
@@ -382,6 +387,71 @@ class DiscogsSorterGui:
             self.format_selected_list = temp_format_list
 
         self._send_manual_pagination_request()
+
+    def custom_field_select_callback(self, field_id: int, query):
+        '''
+        Callback function for custom field selection.
+
+        :param field_id: The ID of the custom field (e.g., 1, 2, 3).
+        :param query: The multiselect query object (contains selected values).
+        '''
+        selected_values = query.value # This is a list of strings
+
+        if not self.custom_field_filter_ids:
+            self.custom_field_filter_ids = {}
+
+        if selected_values:
+            # Store the selected values for this specific field ID
+            self.custom_field_filter_ids[field_id] = selected_values
+        elif field_id in self.custom_field_filter_ids:
+            # If no values are selected, remove the filter for this field ID
+            del self.custom_field_filter_ids[field_id]
+
+        # If the dictionary is empty after deletion, set to None
+        if not self.custom_field_filter_ids:
+            self.custom_field_filter_ids = None
+
+        self._send_manual_pagination_request()
+    
+    def get_all_custom_field_values(self) -> Dict[int, List[str]]:
+        '''
+        Fetches all unique values for each custom field from the DB, 
+        including a special (Blanks) option for NULL/empty values.
+        
+        :returns: A dictionary mapping field_id (int) to a list of unique values (str).
+        :rtype: Dict[int, List[str]]
+        '''
+        custom_field_data = {}
+        with self.manager.get_db_connection() as conn:
+            for field_id in self.manager.get_custom_field_ids_set():
+                table_name = f'custom_field_{field_id}'
+                
+                # Fetch all values, including NULL/empty
+                query = f'''
+                SELECT DISTINCT
+                    field_value
+                FROM {table_name}
+                ORDER BY field_value ASC;
+                '''
+                cursor = conn.execute(query)
+                
+                values = []
+                has_blanks = False
+                for row in cursor.fetchall():
+                    value = row[0]
+                    print(row, value)
+                    if value is None or (isinstance(value, str) and value.strip() == ''):
+                        # Found a blank or NULL value
+                        has_blanks = True
+                    else:
+                        # Add non-blank values
+                        values.append(value)
+
+                
+                values.insert(0, self.BLANKS_LABEL) # Add it at the start
+                        
+                custom_field_data[field_id] = values
+        return custom_field_data
 
     @ui.refreshable
     def paginated_table(self):
@@ -551,6 +621,19 @@ class DiscogsSorterGui:
             self.format_list, multiple=True, label='Format Filter',
             with_input=True, on_change=self.format_select_callback
             ).classes('w-70').props('use-chips')
+        
+        for field_id, values in self.custom_field_data.items():
+            # Get the user-defined name from the config (or default)
+            try:
+                name = self.config['CustomFields'][f'field_{field_id}']
+            except NonExistentKey:
+                name = f'Custom Field {field_id}'
+
+            # Use a lambda function to pass the field_id to the callback
+            ui.select(
+                values, multiple=True, label=f'{name} Filter',
+                with_input=True, on_change=lambda query, id=field_id: self.custom_field_select_callback(id, query)
+                ).classes('w-70').props('use-chips')
         
     def navigate_refresh_left_drawer(self, page_key):
         '''

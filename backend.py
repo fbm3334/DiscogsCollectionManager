@@ -31,6 +31,7 @@ class PaginatedReleaseRequest:
     style_ids: list[int] | None = None
     label_ids: list[int] | None = None
     formats: list[str] | None = None
+    custom_field_filters: dict[int, list[str]] | None = None
 
 class DiscogsManager:
     '''
@@ -566,7 +567,8 @@ class DiscogsManager:
             request.genre_ids,
             request.style_ids,
             request.label_ids,
-            request.formats)
+            request.formats,
+            request.custom_field_filters)
 
         # 2. Prepare Pagination
         offset = request.page * request.page_size
@@ -588,6 +590,33 @@ class DiscogsManager:
 
         print(rows)
         return rows, total_rows
+    
+    def _build_custom_field_joins(self) -> tuple[str, str]:
+        '''
+        Builds the SELECT and JOIN clauses for all known custom fields.
+
+        :returns: A tuple (custom_select_sql, custom_join_sql)
+        :rtype: tuple[str, str]
+        '''
+        custom_select_parts = []
+        custom_join_parts = []
+
+        for field_id in self.custom_ids:
+            table_name = f'custom_field_{field_id}'
+            alias = f'cf{field_id}'
+
+            # SELECT part is only needed for the main query
+            custom_select_parts.append(f'{alias}.field_value AS custom_{field_id}')
+
+            # JOIN part is needed for both count and main queries
+            custom_join_parts.append(f'''
+                LEFT JOIN {table_name} {alias} ON r.id = {alias}.release_id
+            ''')
+            
+        custom_select_sql = ',\n' + ',\n'.join(custom_select_parts) if custom_select_parts else ''
+        custom_join_sql = '\n'.join(custom_join_parts)
+        
+        return custom_select_sql, custom_join_sql
 
     def _build_order_clause(self, sort_by: str, desc: bool) -> str:
         '''
@@ -619,7 +648,7 @@ class DiscogsManager:
         else:
             return f"r.{sort_by} {order_dir}"
 
-    def _build_where_clause(self, search_query: str, artist_ids: list[int] | None, genre_ids: list[int] | None, style_ids: list[int] | None, label_ids: list[int] | None, formats: list[str] | None) -> tuple[str, list]:
+    def _build_where_clause(self, search_query: str, artist_ids: list[int] | None, genre_ids: list[int] | None, style_ids: list[int] | None, label_ids: list[int] | None, formats: list[str] | None, custom_field_filters: dict[int, list[str]] | None) -> tuple[str, list]:
         '''
         Constructs the SQL WHERE clause and prepares search parameters, now including Genre, Style, and Label filters.
         '''
@@ -700,6 +729,43 @@ class DiscogsManager:
             format_condition = f"r.format IN ({placeholders})"
             conditions.append(format_condition)
             search_params.extend(formats) # Pass the format strings as parameters
+
+        if custom_field_filters:
+            BLANKS_LABEL = "[Blanks]" # Define the constant locally for clarity/safety
+
+            for field_id, values in custom_field_filters.items():
+                if values:
+                    table_name = f'custom_field_{field_id}'
+                    alias = f'cf{field_id}' # We must use the alias from the main query!
+                    
+                    # 1. Separate the "Blanks" option from actual values
+                    filtered_values = [v for v in values if v != BLANKS_LABEL]
+                    is_blanks_selected = BLANKS_LABEL in values
+                    
+                    combined_condition = []
+                    
+                    # A. Blanks Condition
+                    if is_blanks_selected:
+                        # This condition matches releases that either:
+                        # 1. Do not have a row in the custom field table (cfX.release_id IS NULL)
+                        # 2. Have a row, but the value is NULL or empty/whitespace.
+                        blanks_condition = f'({alias}.release_id IS NULL OR {alias}.field_value IS NULL OR TRIM({alias}.field_value) = \'\')'
+                        combined_condition.append(blanks_condition)
+
+                    # B. Specific Value Condition
+                    if filtered_values:
+                        # User wants releases with one of the specific field values
+                        placeholders = ', '.join(['?'] * len(filtered_values))
+                        value_condition = f'{alias}.field_value IN ({placeholders})'
+                        combined_condition.append(value_condition)
+                        # Append the parameters for the IN clause to the main search_params list
+                        search_params.extend(filtered_values)
+                    
+                    # C. Combine Conditions
+                    if combined_condition:
+                        # Use OR logic between the Blanks check and the specific value checks
+                        custom_field_condition = f'({" OR ".join(combined_condition)})'
+                        conditions.append(custom_field_condition)
         
         if not conditions:
             return "", []
@@ -722,6 +788,9 @@ class DiscogsManager:
         :returns: The total number of rows matching the criteria.
         :rtype: int
         '''
+        # Get the required custom field joins
+        _, custom_join_sql = self._build_custom_field_joins()
+
         count_query = f'''
         SELECT COUNT(DISTINCT r.id) 
         FROM releases r
@@ -733,6 +802,7 @@ class DiscogsManager:
         LEFT JOIN genres g on gs.genre_id = g.id
         LEFT JOIN release_styles rs on r.id = rs.release_id
         LEFT JOIN styles s on rs.style_id = s.id
+        {custom_join_sql}
         {where_sql}
         '''
         # Pass search_params to filter the count correctly
@@ -769,24 +839,7 @@ class DiscogsManager:
         :rtype: str
         '''
         # Build the SELECT and JOIN clauses for the custom fields
-        custom_select_parts = []
-        custom_join_parts = []
-
-        print('IDs', self.custom_ids)
-        for field_id in self.custom_ids:
-            print('IDs', self.custom_ids)
-            table_name = f'custom_field_{field_id}'
-            alias = f'cf{field_id}'
-
-            custom_select_parts.append(f'{alias}.field_value AS custom_{field_id}')
-
-            custom_join_parts.append(f'''
-                LEFT JOIN {table_name} {alias} ON r.id = {alias}.release_id
-                                     ''')
-            
-        custom_select_sql = ',\n' + ',\n'.join(custom_select_parts) if custom_select_parts else ''
-        print(custom_select_sql)
-        custom_join_sql = '\n'.join(custom_join_parts)
+        custom_select_sql, custom_join_sql = self._build_custom_field_joins()
 
         return f'''
         SELECT 
