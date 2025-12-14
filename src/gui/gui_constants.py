@@ -38,3 +38,17 @@ FILTER_DEFINITIONS = [
         attribute_name='format_selected_list'
     ),
 ]
+
+STATIC_COLUMNS = [
+    {'name': 'thumb', 'label': 'Art', 'field': 'thumb_url', 'sortable': False},
+    {'name': 'id', 'label': 'ID', 'field': 'id', 'sortable': True},
+    {'name': 'artist_name', 'label': 'Artist', 'field': 'artist_name', 'sortable': True, 'style': 'text-wrap: wrap'},
+    {'name': 'title', 'label': 'Title', 'field': 'title', 'sortable': True, 'style': 'text-wrap: wrap'},
+    {'name': 'label_name', 'label': 'Label', 'field': 'label_name', 'sortable': True, 'style': 'text-wrap: wrap'},
+    {'name': 'catno', 'label': 'Cat No', 'field': 'catno', 'sortable': False, 'style': 'text-wrap: wrap'},
+    {'name': 'genres', 'label': 'Genres', 'field': 'genres', 'sortable': True, 'style': 'text-wrap: wrap'},
+    {'name': 'style_name', 'label': 'Styles', 'field': 'style_name', 'sortable': True, 'style': 'text-wrap: wrap'},
+    {'name': 'year', 'label': 'Year', 'field': 'year', 'sortable': True},
+    {'name': 'format', 'label': 'Format', 'field': 'format', 'sortable': True},
+    {'name': 'release_url', 'label': 'Discogs Link', 'field': 'release_url', 'sortable': False},
+]
