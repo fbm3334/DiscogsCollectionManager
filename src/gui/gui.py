@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from dataclasses import dataclass
 import shutil
 from typing import List, Dict, Any
 
@@ -8,15 +7,9 @@ import tomlkit as tk
 from tomlkit import TOMLDocument
 from tomlkit.exceptions import NonExistentKey
 
-from backend import DiscogsManager, PaginatedReleaseRequest
+from core.backend import DiscogsManager, PaginatedReleaseRequest
+from gui.gui_classes import SidebarPage
 
-@dataclass
-class SidebarPage:
-    """Represents a page/item in the sidebar."""
-    key: int
-    label: str
-    icon: str
-    route: str
 
 PAGES = [
     SidebarPage(key=0, label='Collection', icon='list_alt', route='/'),
@@ -30,7 +23,7 @@ class DiscogsSorterGui:
     Discogs sorter GUI frontend class.
     '''
     INITIAL_PAGE_SIZE = 20
-    INITIAL_PAGE = 0
+    INITIAL_PAGxE = 0
     BLANKS_LABEL = '[Blanks]'
 
     def __init__(self, force_fetch: bool = False) -> None:
@@ -121,13 +114,13 @@ class DiscogsSorterGui:
         '''
         # Try to load the config from config.toml
         try:
-            with open('config.toml', 'r', encoding='utf-8') as f:
+            with open('cache/config.toml', 'r', encoding='utf-8') as f:
                 self.config = tk.load(f)
         except FileNotFoundError:
             # If the file isn't found, then copy over the default config
             # and load it.
-            shutil.copyfile('defaultconfig.toml', 'config.toml')
-            with open('config.toml', 'r', encoding='utf-8') as f:
+            shutil.copyfile('defaultconfig.toml', 'cache/config.toml')
+            with open('cache/config.toml', 'r', encoding='utf-8') as f:
                 self.config = tk.load(f)
         
         print(self.config)
@@ -136,7 +129,7 @@ class DiscogsSorterGui:
         '''
         Save the TOML config.
         '''
-        with open('config.toml', 'w', encoding='utf-8') as f:
+        with open('cache/config.toml', 'w', encoding='utf-8') as f:
             tk.dump(self.config, f)
 
     def get_columns(self) -> List[Dict[str, Any]]:
