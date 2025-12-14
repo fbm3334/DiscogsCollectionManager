@@ -8,22 +8,15 @@ from tomlkit import TOMLDocument
 from tomlkit.exceptions import NonExistentKey
 
 from core.backend import DiscogsManager, PaginatedReleaseRequest
-from gui.gui_classes import SidebarPage
-
-
-PAGES = [
-    SidebarPage(key=0, label='Collection', icon='list_alt', route='/'),
-    SidebarPage(key=1, label='Settings', icon='settings', route='/settings'),
-    # You can easily add more pages here without changing the methods
-    # SidebarPage(key=2, label='New Page', icon='add', route='/new'),
-]
+from gui.gui_classes import SidebarPage, IDFilterDefinition, StringFilterDefinition
+from gui.gui_constants import PAGES, FILTER_DEFINITIONS
 
 class DiscogsSorterGui:
     '''
     Discogs sorter GUI frontend class.
     '''
     INITIAL_PAGE_SIZE = 20
-    INITIAL_PAGxE = 0
+    INITIAL_PAGE = 0
     BLANKS_LABEL = '[Blanks]'
 
     def __init__(self, force_fetch: bool = False) -> None:
@@ -532,39 +525,47 @@ class DiscogsSorterGui:
         progress_percentage = (current / total) * 100.0
         self.progress_string = f'{self.progress_stage} ({progress_percentage:.1f}%)'
         self.footer_update_text.refresh()
+    
+    # Adjust the type hint to accept either of the new dataclasses
+    def _build_select_filter(self, definition: IDFilterDefinition | StringFilterDefinition):
+        """Builds a single ui.select element based on the provided dataclass definition."""
+        
+        # 1. Get the list of options from the instance attribute (e.g., self.artist_list)
+        options_list = getattr(self, definition.data_list_attr)
+        
+        # 2. Determine the correct callback logic
+        if definition.callback_type == 'string':
+            # --- String-based filter (Format) ---
+            # The IDE knows 'definition' is a StringFilterDefinition here
+            callback = lambda query: self._generic_string_callback(
+                definition.attribute_name, query
+            )
+        else:
+            # --- ID-based filter (Artist, Genre, etc.) ---
+            # The IDE knows 'definition' is an IDFilterDefinition here
+            
+            # Get the actual manager method (e.g., self.manager.get_artist_id_by_name)
+            lookup_method = getattr(self.manager, definition.manager_lookup)
+            
+            callback = lambda query: self._generic_select_callback(
+                definition.filter_type, lookup_method, query
+            )
+
+        # 3. Build the UI element
+        ui.select(
+            options_list, 
+            multiple=True, 
+            label=definition.label, # Use dot notation
+            with_input=True, 
+            on_change=callback
+        ).classes('w-70').props('use-chips')
 
     def build_filter_dropdowns(self):
         '''
         Build the filter dropdowns.
         '''
-        ui.select(
-            self.artist_list, multiple=True, label='Artist Filter',
-            with_input=True, 
-            on_change=lambda query: self._generic_select_callback('artist', self.manager.get_artist_id_by_name, query)
-            ).classes('w-70').props('use-chips')
-        ui.select(
-            self.genre_list, multiple=True, label='Genre Filter',
-            with_input=True, 
-            on_change=lambda query: self._generic_select_callback('genre', self.manager.get_genre_id_by_name, query)
-            ).classes('w-70').props('use-chips')
-        
-        ui.select(
-            self.style_list, multiple=True, label='Style Filter',
-            with_input=True, 
-            on_change=lambda query: self._generic_select_callback('style', self.manager.get_style_id_by_name, query)
-            ).classes('w-70').props('use-chips')
-        
-        ui.select(
-            self.label_list, multiple=True, label='Label Filter',
-            with_input=True,
-            on_change=lambda query: self._generic_select_callback('label', self.manager.get_label_id_by_name, query)
-            ).classes('w-70').props('use-chips')
-        
-        ui.select(
-            self.format_list, multiple=True, label='Format Filter',
-            with_input=True,
-            on_change=lambda query: self._generic_string_callback('format_selected_list', query)
-            ).classes('w-70').props('use-chips')
+        for definition in FILTER_DEFINITIONS:
+            self._build_select_filter(definition)
         
         for field_id, values in self.custom_field_data.items():
             # Get the user-defined name from the config (or default)
