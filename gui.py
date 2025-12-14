@@ -285,106 +285,52 @@ class DiscogsSorterGui:
         self.search_query = query.value
         self._send_manual_pagination_request()
 
-    def artist_select_callback(self, query):
+    def _generic_select_callback(self, filter_type: str, id_lookup_method, query):
         '''
-        Callback function for artist selection.
+        A generic callback function for all ID-based selection filters 
+        (Artist, Genre, Style, Label).
 
-        :param query: Artist selection query.
+        :param filter_type: The base name of the filter ('artist', 'genre', 'style', 'label').
+        :type filter_type: str
+        :param id_lookup_method: The DiscogsManager method used to find the ID by name.
+        :param query: The multiselect query object from NiceGUI (contains selected values).
         '''
-        
         name_list = query.value
         id_list = []
         
         for name in name_list:
-            id_list.append(self.manager.get_artist_id_by_name(name))
-
+            # Calls self.manager.get_artist_id_by_name(name) or similar
+            id_list.append(id_lookup_method(name)) 
         
-        if len(id_list) < 1:
-            self.artist_filter_ids = None
+        # Dynamically set the correct filter attribute
+        # Example: If filter_type is 'artist', this sets self.artist_filter_ids
+        attribute_name = f'{filter_type}_filter_ids'
+        
+        if id_list:
+            setattr(self, attribute_name, id_list)
+            print(f"Set {attribute_name}: {id_list}") # Replace with proper logging
         else:
-            self.artist_filter_ids = id_list
-            print(self.artist_filter_ids)
-
-        self._send_manual_pagination_request()
+            setattr(self, attribute_name, None)
         
-
-    def genre_select_callback(self, query):
-        '''
-        Callback function for genre selection.
-
-        :param query: Genre selection query.
-        '''
-        genre_list = query.value
-        id_list = []
-        
-        for genre in genre_list:
-            id_list.append(self.manager.get_genre_id_by_name(genre))
-
-        
-        if len(id_list) < 1:
-            self.genre_filter_ids = None
-        else:
-            self.genre_filter_ids = id_list
-
+        # Trigger the UI update
         self._send_manual_pagination_request()
 
-    def style_select_callback(self, query):
+    def _generic_string_callback(self, attribute_name: str, query):
         '''
-        Callback function for style selection.
+        A generic callback function for string-based selection filters (e.g., Format).
 
-        :param query: Style selection query.
+        :param attribute_name: The name of the instance attribute to update (e.g., 'format_selected_list').
+        :param query: The multiselect query object (contains selected values).
         '''
-        style_list = query.value
-        id_list = []
-        
-        for style in style_list:
-            id_list.append(self.manager.get_style_id_by_name(style))
+        selected_values = query.value
 
-        
-        if len(id_list) < 1:
-            self.style_filter_ids = None
+        if selected_values:
+            # Set the attribute to the list of selected strings
+            setattr(self, attribute_name, selected_values)
+            print(f"Set {attribute_name}: {selected_values}") # Replace with proper logging
         else:
-            self.style_filter_ids = id_list
-
-        self._send_manual_pagination_request()
-
-    def label_select_callback(self, query):
-        '''
-        Callback function for label selection.
-
-        :param query: Style selection query.
-        '''
-        label_list = query.value
-        id_list = []
-        
-        for label in label_list:
-            id_list.append(self.manager.get_label_id_by_name(label))
-
-        print(id_list)
-        if len(id_list) < 1:
-            self.label_filter_ids = None
-        else:
-            self.label_filter_ids = id_list
-
-        self._send_manual_pagination_request()
-
-    def format_select_callback(self, query):
-        '''
-        Callback function for format selection.
-
-        :param query: Style selection query.
-        '''
-        format_list = query.value
-        temp_format_list = []
-        
-        for format_sel in format_list:
-            temp_format_list.append(format_sel)
-
-        print(temp_format_list)
-        if len(temp_format_list) < 1:
-            self.format_selected_list = None
-        else:
-            self.format_selected_list = temp_format_list
+            # Clear the filter
+            setattr(self, attribute_name, None)
 
         self._send_manual_pagination_request()
 
@@ -600,26 +546,31 @@ class DiscogsSorterGui:
         '''
         ui.select(
             self.artist_list, multiple=True, label='Artist Filter',
-            with_input=True, on_change=self.artist_select_callback
+            with_input=True, 
+            on_change=lambda query: self._generic_select_callback('artist', self.manager.get_artist_id_by_name, query)
             ).classes('w-70').props('use-chips')
         ui.select(
             self.genre_list, multiple=True, label='Genre Filter',
-            with_input=True, on_change=self.genre_select_callback
+            with_input=True, 
+            on_change=lambda query: self._generic_select_callback('genre', self.manager.get_genre_id_by_name, query)
             ).classes('w-70').props('use-chips')
         
         ui.select(
             self.style_list, multiple=True, label='Style Filter',
-            with_input=True, on_change=self.style_select_callback
+            with_input=True, 
+            on_change=lambda query: self._generic_select_callback('style', self.manager.get_style_id_by_name, query)
             ).classes('w-70').props('use-chips')
         
         ui.select(
             self.label_list, multiple=True, label='Label Filter',
-            with_input=True, on_change=self.label_select_callback
+            with_input=True,
+            on_change=lambda query: self._generic_select_callback('label', self.manager.get_label_id_by_name, query)
             ).classes('w-70').props('use-chips')
         
         ui.select(
             self.format_list, multiple=True, label='Format Filter',
-            with_input=True, on_change=self.format_select_callback
+            with_input=True,
+            on_change=lambda query: self._generic_string_callback('format_selected_list', query)
             ).classes('w-70').props('use-chips')
         
         for field_id, values in self.custom_field_data.items():
