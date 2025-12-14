@@ -43,7 +43,6 @@ class DiscogsManager:
         self.pat = None
         self.client = None
         self.user = None
-        self.load_settings()
         self.load_token()
         self.custom_ids = set()
 
@@ -54,27 +53,6 @@ class DiscogsManager:
         self._load_custom_field_ids_from_db()
 
         self.progress_stage = ""
-
-    def load_settings(self):
-        '''
-        Load settings from YAML file.
-        '''
-        try:
-            with open('settings.yml', 'r', encoding='utf-8') as file:
-                self.settings = yaml.safe_load(file) or {}
-        except FileNotFoundError:
-            self.settings = {}
-
-    def save_settings(self, new_settings):
-        '''
-        Save settings to YAML file.
-
-        :param new_settings: dict of settings to update
-        :type new_settings: dict
-        '''
-        self.settings.update(new_settings)
-        with open('settings.yml', 'w', encoding='utf-8') as file:
-            yaml.dump(self.settings, file)
 
     def load_token(self):
         '''
@@ -171,10 +149,11 @@ class DiscogsManager:
         cursor.execute(f"INSERT INTO {table} ({name_col}) VALUES (?)", (value,))
         return cursor.lastrowid
 
-    def _save_release_to_release_db(self, basic_info: dict):
+    def _save_release_to_release_db(self, conn, basic_info: dict):
         '''
         Upserts the release into the main releases database.
 
+        :param conn: Database connection
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
         '''
@@ -182,23 +161,22 @@ class DiscogsManager:
         if not rel_id:
             return
 
-        with self.get_db_connection() as conn:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            cursor.execute('''
-                INSERT OR REPLACE INTO releases (id, master_id, title, year, thumb_url, release_url, format)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                rel_id,
-                basic_info.get('master_id', 0),
-                basic_info.get('title', ''),
-                basic_info.get('year', ''),
-                basic_info.get('thumb', ''),
-                f"https://www.discogs.com/release/{rel_id}",
-                basic_info.get('formats', {})[0].get('name', '')
-            ))
+        cursor.execute('''
+            INSERT OR REPLACE INTO releases (id, master_id, title, year, thumb_url, release_url, format)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            rel_id,
+            basic_info.get('master_id', 0),
+            basic_info.get('title', ''),
+            basic_info.get('year', ''),
+            basic_info.get('thumb', ''),
+            f"https://www.discogs.com/release/{rel_id}",
+            basic_info.get('formats', {})[0].get('name', '')
+        ))
 
-            conn.commit()
+        conn.commit()
 
     def _load_custom_field_ids_from_db(self):
         '''
@@ -231,10 +209,11 @@ class DiscogsManager:
         '''
         return self.custom_ids
 
-    def _save_artist_to_artist_db(self, basic_info: dict):
+    def _save_artist_to_artist_db(self, conn, basic_info: dict):
         '''
         Sort the release into the relevant artist databases.
 
+        :param conn: Database connection
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
         '''
@@ -242,26 +221,27 @@ class DiscogsManager:
         if not rel_id:
             return
 
-        with self.get_db_connection() as conn:
-            cursor = conn.cursor()
-            # Clear old links for this release to prevent duplication on updates
-            cursor.execute("DELETE FROM release_artists WHERE release_id = ?", (rel_id,))
-            for i, artist in enumerate(basic_info.get('artists', [])):
-                a_id = artist.get('id')
-                a_name = artist.get('name')
-                # Insert Artist if not exists
-                cursor.execute("INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)", (a_id, a_name))
-                cursor.execute(
-                    "INSERT OR IGNORE INTO release_artists (release_id, artist_id, is_primary) VALUES (?, ?, ?)",
-                    (rel_id, a_id, 1 if i == 0 else 0)
-                )
-            
-            conn.commit()
 
-    def _save_style_genre_label_to_dbs(self, basic_info: dict):
+        cursor = conn.cursor()
+        # Clear old links for this release to prevent duplication on updates
+        cursor.execute("DELETE FROM release_artists WHERE release_id = ?", (rel_id,))
+        for i, artist in enumerate(basic_info.get('artists', [])):
+            a_id = artist.get('id')
+            a_name = artist.get('name')
+            # Insert Artist if not exists
+            cursor.execute("INSERT OR IGNORE INTO artists (id, name) VALUES (?, ?)", (a_id, a_name))
+            cursor.execute(
+                "INSERT OR IGNORE INTO release_artists (release_id, artist_id, is_primary) VALUES (?, ?, ?)",
+                (rel_id, a_id, 1 if i == 0 else 0)
+            )
+        
+        conn.commit()
+
+    def _save_style_genre_label_to_dbs(self, conn, basic_info: dict):
         '''
         Save the style, genre and label info into relevant databases.
 
+        :param conn: Database connection
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
         '''
@@ -269,32 +249,32 @@ class DiscogsManager:
         if not rel_id:
             return
 
-        with self.get_db_connection() as conn:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            cursor.execute("DELETE FROM release_genres WHERE release_id = ?", (rel_id,))
-            for g in basic_info.get('genres', []):
-                g_id = self._insert_lookup(cursor, 'genres', 'name', g)
-                cursor.execute("INSERT INTO release_genres VALUES (?, ?)", (rel_id, g_id))
+        cursor.execute("DELETE FROM release_genres WHERE release_id = ?", (rel_id,))
+        for g in basic_info.get('genres', []):
+            g_id = self._insert_lookup(cursor, 'genres', 'name', g)
+            cursor.execute("INSERT INTO release_genres VALUES (?, ?)", (rel_id, g_id))
 
-            cursor.execute("DELETE FROM release_styles WHERE release_id = ?", (rel_id,))
-            for s in basic_info.get('styles', []):
-                s_id = self._insert_lookup(cursor, 'styles', 'name', s)
-                cursor.execute("INSERT INTO release_styles VALUES (?, ?)", (rel_id, s_id))
+        cursor.execute("DELETE FROM release_styles WHERE release_id = ?", (rel_id,))
+        for s in basic_info.get('styles', []):
+            s_id = self._insert_lookup(cursor, 'styles', 'name', s)
+            cursor.execute("INSERT INTO release_styles VALUES (?, ?)", (rel_id, s_id))
 
-            cursor.execute("DELETE FROM release_labels WHERE release_id = ?", (rel_id,))
-            for l in basic_info.get('labels', []):
-                l_name = l.get('name')
-                l_cat = l.get('catno')
-                l_id = self._insert_lookup(cursor, 'labels', 'name', l_name)
-                cursor.execute("INSERT INTO release_labels VALUES (?, ?, ?)", (rel_id, l_id, l_cat))
+        cursor.execute("DELETE FROM release_labels WHERE release_id = ?", (rel_id,))
+        for l in basic_info.get('labels', []):
+            l_name = l.get('name')
+            l_cat = l.get('catno')
+            l_id = self._insert_lookup(cursor, 'labels', 'name', l_name)
+            cursor.execute("INSERT INTO release_labels VALUES (?, ?, ?)", (rel_id, l_id, l_cat))
 
-            conn.commit()
+        conn.commit()
 
-    def _save_custom_notes_to_dbs(self, basic_info: dict, notes: dict | None = None):
+    def _save_custom_notes_to_dbs(self, conn, basic_info: dict, notes: dict | None = None):
         '''
         Save the custom notes to the databases.
 
+        :param conn: Database connection
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
         :param notes: Optional custom notes associated with the release
@@ -309,36 +289,36 @@ class DiscogsManager:
             for note in notes:
                 field_id = note.get('field_id')
                 # Create the table
-                self.create_custom_field_db(field_id)
+                self.create_custom_field_db(conn, field_id)
 
-        with self.get_db_connection() as conn:
-            cursor = conn.cursor()
-            if notes is not None:
-                for note in notes:
-                    field_id = note.get('field_id')                  
-                    note = note.get('value', '').strip()
-                    table_name = f'custom_field_{field_id}'
-                    cursor.execute(f'''
-                        INSERT OR REPLACE INTO {table_name} (release_id, field_value)
-                        VALUES (?, ?)
-                    ''', (rel_id, note))
+        cursor = conn.cursor()
+        if notes is not None:
+            for note in notes:
+                field_id = note.get('field_id')                  
+                note = note.get('value', '').strip()
+                table_name = f'custom_field_{field_id}'
+                cursor.execute(f'''
+                    INSERT OR REPLACE INTO {table_name} (release_id, field_value)
+                    VALUES (?, ?)
+                ''', (rel_id, note))
 
-            conn.commit()
+        conn.commit()
 
-    def save_release_to_db(self, basic_info: dict, notes: dict | None = None):
+    def save_release_to_db(self, conn, basic_info: dict, notes: dict | None = None):
         '''
         Parses a single release dictionary and saves to normalised DB.
 
+        :param conn: Database connection.
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
         :param notes: Optional custom notes associated with the release
         :type notes: dict | None
         '''
 
-        self._save_release_to_release_db(basic_info)
-        self._save_artist_to_artist_db(basic_info)
-        self._save_style_genre_label_to_dbs(basic_info)
-        self._save_custom_notes_to_dbs(basic_info, notes)
+        self._save_release_to_release_db(conn, basic_info)
+        self._save_artist_to_artist_db(conn, basic_info)
+        self._save_style_genre_label_to_dbs(conn, basic_info)
+        self._save_custom_notes_to_dbs(conn, basic_info, notes)
 
     def get_custom_field_ids(self, releases_list: list[dc.CollectionItemInstance]) -> set:
         '''
@@ -358,10 +338,11 @@ class DiscogsManager:
                     custom_field_ids.add(custom_field_id)
         return custom_field_ids
     
-    def create_custom_field_db(self, field_id: int):
+    def create_custom_field_db(self, conn, field_id: int):
         '''
         Create a table for storing custom field values.
 
+        :param conn: Database connection
         :param field_id: ID of the custom field
         :type field_id: int
         '''
@@ -373,9 +354,8 @@ class DiscogsManager:
             FOREIGN KEY(release_id) REFERENCES releases(id)
         );
         '''
-        with self.get_db_connection() as conn:
-            conn.executescript(schema)
-            conn.commit()
+        conn.executescript(schema)
+        conn.commit()
 
     def fetch_collection(self, progress_callback=None):
         '''
@@ -396,39 +376,44 @@ class DiscogsManager:
 
         custom_field_ids = set()
 
-        for i, item in enumerate(releases_to_process):
-            # item.data contains exactly what we need
-            # We don't need self.client.release() usually, unless we need extra deep data
-            basic_info = item.data.get('basic_information')
-            if basic_info:
-                self.save_release_to_db(basic_info, item.notes)
+        with self.get_db_connection() as conn:
+            for i, item in enumerate(releases_to_process):
+                # item.data contains exactly what we need
+                # We don't need self.client.release() usually, unless we need extra deep data
+                basic_info = item.data.get('basic_information')
+                if basic_info:
+                    self.save_release_to_db(conn, basic_info, item.notes)
 
-            if item.notes:
-                for note in item.notes:
-                    custom_field_id = note['field_id']
-                    custom_field_ids.add(custom_field_id)
-            
-            if progress_callback:
-                progress_callback(i + 1, total_releases)
+                if item.notes:
+                    for note in item.notes:
+                        custom_field_id = note['field_id']
+                        custom_field_ids.add(custom_field_id)
+                
+                if progress_callback:
+                    progress_callback(i + 1, total_releases)
 
         self.custom_ids = custom_field_ids
         
         print('Finished!')
 
-    def _get_artists_missing_sort_name(self):
+    def _get_artists_missing_sort_name(self, conn):
         '''
         Fetches artist IDs and names from the DB that lack a sort_name.
-        '''
-        with self.get_db_connection() as conn:
-            # Assumes the connection/cursor supports dict-like access for rows
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT id, name FROM artists WHERE sort_name IS NULL")
-            return cursor.fetchall()
         
-    def _fetch_sort_name_from_api(self, artist_id, default_name):
+        :param conn: Database connection.
+        :return: List of artists missing a sort name.
+        :rtype: list
+        '''
+        # Assumes the connection/cursor supports dict-like access for rows
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT id, name FROM artists WHERE sort_name IS NULL")
+        return cursor.fetchall()
+        
+    def _fetch_sort_name_from_api(self, conn, artist_id, default_name):
         '''
         Uses the Discogs client to find the accurate sort name.
 
+        :param conn: Database connection
         :param artist_id: Artist ID
         :param default_name: Default name
         :return: Sort name
@@ -438,11 +423,11 @@ class DiscogsManager:
         artist_obj = self.client.artist(artist_id)
         
         # Find a related release to get the 'artists_sort' field
-        with self.get_db_connection() as sub_conn:
-            res = sub_conn.execute(
-                "SELECT release_id FROM release_artists WHERE artist_id = ? LIMIT 1", 
-                (artist_id,)
-            ).fetchone()
+
+        res = conn.execute(
+            "SELECT release_id FROM release_artists WHERE artist_id = ? LIMIT 1", 
+            (artist_id,)
+        ).fetchone()
         
         if res:
             rel = self.client.release(res[0])
@@ -451,10 +436,11 @@ class DiscogsManager:
         else:
             return default_name
         
-    def _process_and_batch_updates(self, artists_to_check, progress_callback):
+    def _process_and_batch_updates(self, conn, artists_to_check, progress_callback):
         '''
         Iterates through artists, determines sort names, and commits in batches.
 
+        :param conn: Database connection
         :param artists_to_check: Artists to check
         :param progress_callback: Optional progress callback
         '''
@@ -466,7 +452,7 @@ class DiscogsManager:
             a_id, a_name = row['id'], row['name']
             
             # Determine the sort name using the refactored helper
-            sort_name = self._determine_sort_name(a_id, a_name)
+            sort_name = self._determine_sort_name(conn, a_id, a_name)
             updates.append((sort_name, a_id))
             
             if progress_callback:
@@ -474,28 +460,28 @@ class DiscogsManager:
                 
             # Batch update every 10
             if len(updates) >= 10:
-                self._commit_batch_updates(updates)
+                self._commit_batch_updates(conn, updates)
                 updates = []
                 
         # Commit remaining
         if updates:
-            self._commit_batch_updates(updates)
+            self._commit_batch_updates(conn, updates)
 
-    def _commit_batch_updates(self, updates_batch):
+    def _commit_batch_updates(self, conn, updates_batch):
         '''
         Executes the database update for a given batch of (sort_name, id) tuples.
 
+        :param conn: Database connection
         :param updates_batch: Batch of tuples
         '''
+        conn.executemany("UPDATE artists SET sort_name = ? WHERE id = ?", updates_batch)
+        conn.commit()
         
-        with self.get_db_connection() as conn:
-            conn.executemany("UPDATE artists SET sort_name = ? WHERE id = ?", updates_batch)
-            conn.commit()
-        
-    def _determine_sort_name(self, artist_id, artist_name):
+    def _determine_sort_name(self, conn, artist_id, artist_name):
         '''
         Determines the correct sort name, using simple check or API fetch.
 
+        :param conn: Database connection.
         :param artist_id: Artist ID.
         :param artist_name: Artist name.
         '''
@@ -508,7 +494,7 @@ class DiscogsManager:
         
         # 2. API Fetch (Slow Path)
         try:
-            return self._fetch_sort_name_from_api(artist_id, artist_name)
+            return self._fetch_sort_name_from_api(conn, artist_id, artist_name)
         except Exception as e:
             print(f"Error fetching sort name for {artist_name}: {e}")
             return artist_name # Fallback to regular name on error
@@ -518,16 +504,15 @@ class DiscogsManager:
         '''
         Coordinates the fetching and updating of artist sort names.
         '''
-                    
-        artists_to_check = self._get_artists_missing_sort_name()
-        if not artists_to_check:
-            return
+        with self.get_db_connection() as conn:            
+            artists_to_check = self._get_artists_missing_sort_name(conn)
+            if not artists_to_check:
+                return
+                
+            if not self.client:
+                self.connect_client()
             
-        if not self.client:
-            self.connect_client()
-            
-        # 2. Processing and Batching
-        self._process_and_batch_updates(artists_to_check, progress_callback)
+            self._process_and_batch_updates(conn, artists_to_check, progress_callback)
         
 
     def check_artist_prefix(self, artist_name):
