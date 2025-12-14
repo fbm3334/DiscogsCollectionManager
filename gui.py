@@ -388,6 +388,7 @@ class DiscogsSorterGui:
         '''
         Function to render the paginated table.
         '''
+
         self.table = ui.table(
             rows=self.table_data['rows'],
             columns=self.get_columns(),
@@ -400,12 +401,12 @@ class DiscogsSorterGui:
             </q-td>
         ''')
         self.table.add_slot('body-cell-thumb', '''
-             <q-td :props="props">
+            <q-td :props="props">
                 <img :src="props.value" style="max-width: 50px; max-height: 50px;">
             </q-td>
         ''')
 
-        self.table.classes('virtual-scroll h-[calc(100vh-200px)] w-[calc(100vw-330px)]')
+        self.table.classes('virtual-scroll h-[calc(100vh-200px)] w-full max-w-none')
         self.table.on('request', self.do_pagination)
 
     def discogs_connection_toggle_callback(self):
