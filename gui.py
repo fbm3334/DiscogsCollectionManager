@@ -628,6 +628,12 @@ class DiscogsSorterGui:
         '''
         Build the custom field name settings.
         '''
+        # Check to see if CustomFields is in the config file first, and if not,
+        # create it
+        if 'CustomFields' not in self.config:
+            new_table = tk.table(is_super_table=True)
+            self.config.add('CustomFields', new_table)
+
         ui.label('Custom Field Names').classes('text-xl font-bold')
         for label in self.manager.get_custom_field_ids_set():
             with ui.row().classes('items-center w-full'):
