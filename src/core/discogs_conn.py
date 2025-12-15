@@ -1,8 +1,12 @@
 import re
+from typing import Dict, List
 
 import discogs_client as dc
 import yaml
 from core.database_manager import DatabaseManager
+
+
+from core.core_classes import PaginatedReleaseRequest
 
 
 class DiscogsConn:
@@ -233,3 +237,118 @@ class DiscogsConn:
                 return True
             
         return False
+    
+    def get_unique_formats(self) -> list[str]:
+        '''
+        Fetches all unique formats from the releases table in the database.
+
+        :return: List of unique format strings.
+        :rtype: list[str]
+        '''
+        return self.db.get_unique_formats()
+    
+    def get_all_custom_field_values(self) -> Dict[int, List[str]]:
+        '''
+        Fetches all unique values for each custom field from the DB, 
+        including a special (Blanks) option for NULL/empty values.
+        
+        :returns: A dictionary mapping field_id (int) to a list of unique values (str).
+        :rtype: Dict[int, List[str]]
+        '''
+        return self.db.get_all_custom_field_values()
+    
+    def get_releases_paginated(self, request: PaginatedReleaseRequest):
+        '''
+        Coordinates fetching releases with full support for search, sorting, and pagination.
+
+        :param request: Request
+        :type request: PaginatedReleaseRequest
+        :return: Tuple containing the rows and total rows.
+        :rtype: tuple(list, int)
+        '''
+        return self.db.get_releases_paginated(request)
+    
+    def get_all_artists(self):
+        '''
+        Fetches all unique artists from the DB, sorted by sort_name.
+        
+        :returns: List of dictionaries with 'id', 'name', and 'sort_name'.
+        :rtype: list[dict]
+        '''
+        return self.db.get_all_artists()
+    
+    def get_all_genres(self):
+        '''
+        Fetches all unique genres from the DB.
+        
+        :returns: List of dictionaries with 'id' and 'name'.
+        :rtype: list[dict]
+        '''
+        return self.db.get_all_genres()
+    
+    def get_all_styles(self):
+        '''
+        Fetches all unique styles from the DB.
+        
+        :returns: List of dictionaries with 'id' and 'name'.
+        :rtype: list[dict]
+        '''
+        return self.db.get_all_styles()
+    
+    def get_all_labels(self):
+        '''
+        Fetches all unique labels from the DB.
+        
+        :returns: List of dictionaries with 'id' and 'name'.
+        :rtype: list[dict]
+        '''
+        return self.db.get_all_labels()
+    
+    def get_custom_field_ids_set(self) -> set:
+        '''
+        Get the custom field IDs from the database.
+
+        :return: Set containing custom field IDs.
+        :rtype: set
+        '''
+        return self.db.get_custom_field_ids_set()
+    
+    def get_artist_id_by_name(self, artist_name: str) -> int | None:
+        '''
+        Fetches the ID of an artist given their exact name.
+
+        :param artist_name: The name of the artist to search for.
+        :returns: The integer ID of the artist, or None if not found.
+        :rtype: int | None
+        '''
+        return self.db.get_artist_id_by_name(artist_name)
+    
+    def get_genre_id_by_name(self,genre: str) -> int | None:
+        '''
+        Fetches the ID of a genre given its exact name.
+
+        :param genre: The name of the genre to search for.
+        :returns: The integer ID of the genre, or None if not found.
+        :rtype: int | None
+        '''
+        return self.db.get_genre_id_by_name(genre)
+    
+    def get_style_id_by_name(self, style: str) -> int | None:
+        '''
+        Fetches the ID of a style given its exact name.
+
+        :param style: The name of the style to search for.
+        :returns: The integer ID of the style, or None if not found.
+        :rtype: int | None
+        '''
+        return self.db.get_style_id_by_name(style)
+    
+    def get_label_id_by_name(self, label: str) -> int | None:
+        '''
+        Fetches the ID of a style given its exact name.
+
+        :param label: The name of the label to search for.
+        :returns: The integer ID of the label, or None if not found.
+        :rtype: int | None
+        '''
+        return self.db.get_label_id_by_name(label)

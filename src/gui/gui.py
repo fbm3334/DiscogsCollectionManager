@@ -30,9 +30,9 @@ class DiscogsSorterGui:
         self._perform_initial_fetch()
         self._get_lists_filters()
 
-        self.format_list = self.backend.db.get_unique_formats()
+        self.format_list = self.backend.get_unique_formats()
 
-        self.custom_field_data: Dict[int, List[str]] = self.backend.db.get_all_custom_field_values()
+        self.custom_field_data: Dict[int, List[str]] = self.backend.get_all_custom_field_values()
         self.custom_field_filter_ids: dict[int, list[str]] | None = None 
         
         self.load_toml_config()
@@ -82,7 +82,7 @@ class DiscogsSorterGui:
             sort_by='artist',
             desc=False
         )
-        self.releases, self.num_releases = self.backend.db.get_releases_paginated(
+        self.releases, self.num_releases = self.backend.get_releases_paginated(
             request=initial_request
         )
 
@@ -112,10 +112,10 @@ class DiscogsSorterGui:
         '''
         Create the lists to be used for filtering.
         '''
-        self.artist_list = self._dict_to_list_conversion(self.backend.db.get_all_artists())
-        self.genre_list = self._dict_to_list_conversion(self.backend.db.get_all_genres())
-        self.style_list = self._dict_to_list_conversion(self.backend.db.get_all_styles())
-        self.label_list = self._dict_to_list_conversion(self.backend.db.get_all_labels())
+        self.artist_list = self._dict_to_list_conversion(self.backend.get_all_artists())
+        self.genre_list = self._dict_to_list_conversion(self.backend.get_all_genres())
+        self.style_list = self._dict_to_list_conversion(self.backend.get_all_styles())
+        self.label_list = self._dict_to_list_conversion(self.backend.get_all_labels())
 
     def load_toml_config(self):
         '''
@@ -132,8 +132,6 @@ class DiscogsSorterGui:
             shutil.copyfile('defaultconfig.toml', 'cache/config.toml')
             with open('cache/config.toml', 'r', encoding='utf-8') as f:
                 self.config = tk.load(f)
-        
-        print(self.config)
 
     def save_toml_config(self):
         '''
@@ -155,7 +153,7 @@ class DiscogsSorterGui:
         # Safely get the CustomFields configuration section, defaulting to an empty dict
         custom_field_config = self.config.get('CustomFields', {})
         
-        for custom_field_id in self.backend.db.get_custom_field_ids_set():
+        for custom_field_id in self.backend.get_custom_field_ids_set():
             field_key = f'field_{custom_field_id}'
             
             # Use dict.get() for safer lookup instead of try/except
@@ -215,7 +213,7 @@ class DiscogsSorterGui:
             page=0,
             page_size=1
         )
-        _, count = self.backend.db.get_releases_paginated(request)
+        _, count = self.backend.get_releases_paginated(request)
         self.table_data['pagination']['rowsNumber'] = count
         return count
     
@@ -270,7 +268,7 @@ class DiscogsSorterGui:
             custom_field_filters=self.custom_field_filter_ids
         )
 
-        new_rows, count = self.backend.db.get_releases_paginated(request)
+        new_rows, count = self.backend.get_releases_paginated(request)
 
         self.table_data['pagination']['rowsNumber'] = count
 
@@ -540,7 +538,7 @@ class DiscogsSorterGui:
             # The IDE knows 'definition' is an IDFilterDefinition here
             
             # Get the actual manager method (e.g., self.manager.get_artist_id_by_name)
-            lookup_method = getattr(self.backend.db, definition.manager_lookup)
+            lookup_method = getattr(self.backend, definition.manager_lookup)
             
             callback = lambda query: self._generic_select_callback(
                 definition.filter_type, lookup_method, query
@@ -658,7 +656,7 @@ class DiscogsSorterGui:
             self.config.add('CustomFields', new_table)
 
         ui.label('Custom Field Names').classes('text-xl font-bold')
-        for label in self.backend.db.get_custom_field_ids_set():
+        for label in self.backend.get_custom_field_ids_set():
             with ui.row().classes('items-center w-full'):
                 ui.label(f'Custom field {label} name')
                 ui.space()
@@ -697,7 +695,6 @@ class DiscogsSorterGui:
 
         for column in self.table.columns:
             # If the value exists, then create the key-value pairs
-            print(column['field'])
             # If the field doesn't exist in the config table, create it, else
             # update the table accordingly
             if column['field'] not in config_table:

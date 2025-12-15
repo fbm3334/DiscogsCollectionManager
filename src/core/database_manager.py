@@ -18,7 +18,7 @@ class DatabaseManager:
         Class initialisation function
         '''
         self.custom_ids = set()
-        
+
     def get_db_path(self):
         '''
         Get the path to the SQLite database file.
@@ -628,18 +628,10 @@ class DatabaseManager:
         '''
         Coordinates fetching releases with full support for search, sorting, and pagination.
 
-        :param page: The page number to retrieve (0-indexed).
-        :type page: int
-        :param page_size: The number of items per page.
-        :type page_size: int
-        :param sort_by: The column name to sort by ('title', 'year', 'date_added', 'id', 'artist').
-        :type sort_by: str
-        :param desc: If True, results are sorted in descending order; otherwise, ascending.
-        :type desc: bool
-        :param search_query: The text to search for across multiple release fields.
-        :type search_query: str
-        :returns: A tuple containing the list of release rows and the total count of matching releases.
-        :rtype: tuple[list, int]
+        :param request: Request
+        :type request: PaginatedReleaseRequest
+        :return: Tuple containing the rows and total rows.
+        :rtype: tuple(list, int)
         '''
         # 1. Prepare SQL Components
         order_clause = self._build_order_clause(request.sort_by, request.desc)
@@ -670,7 +662,6 @@ class DatabaseManager:
             cursor = conn.execute(query, full_params)
             rows = [dict(row) for row in cursor.fetchall()]
 
-        print(rows)
         return rows, total_rows
     
     def get_all_artists(self):
