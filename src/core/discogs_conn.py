@@ -1,13 +1,11 @@
 import re
+import os
 from typing import Dict, List
 
 import discogs_client as dc
-import yaml
+
 from core.database_manager import DatabaseManager
-
-
 from core.core_classes import PaginatedReleaseRequest
-
 
 class DiscogsConn:
     '''
@@ -26,24 +24,29 @@ class DiscogsConn:
 
     def load_token(self):
         '''
-        Load personal access token from secrets YAML file.
+        Load personal access token from secrets text file.
         '''
         try:
-            with open('secrets.yml', 'r', encoding='utf-8') as file:
-                secrets = yaml.safe_load(file)
-                self.pat = secrets.get('personal_access_token')
+            with open('secrets.txt', 'r', encoding='utf-8') as file:
+                self.pat = file.readline()
         except FileNotFoundError:
             self.pat = None
 
     def save_token(self, token):
         '''
-        Save personal access token to secrets YAML file.
+        Save personal access token to secrets text file.
 
         :param token: Personal access token
         '''
         self.pat = token
-        with open('secrets.yml', 'w', encoding='utf-8') as file:
-            file.write(f"personal_access_token: {token}\n")
+        try:
+            with open('secrets.txt', 'x', encoding='utf-8') as file:
+                file.write(f'{token}')
+        except FileExistsError:
+            os.remove('secrets.txt')
+            with open('secrets.txt', 'x', encoding='utf-8') as file:
+                file.write(f'{token}')
+            
 
     def connect_client(self):
         '''

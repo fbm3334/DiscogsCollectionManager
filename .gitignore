@@ -206,9 +206,6 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# secrets.yml
-secrets.yml
-
 # Cache folder
 cache/
 
@@ -218,3 +215,4 @@ output/
 
 # User configuration
 config.toml
+secrets.txt
