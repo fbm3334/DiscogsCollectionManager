@@ -3,11 +3,11 @@ import multiprocessing
 
 from nicegui import ui, app
 
-from gui import DiscogsSorterGui
+from gui.gui import DiscogsSorterGui
 
 multiprocessing.set_start_method("spawn", force=True)
 
-dsg = DiscogsSorterGui(force_fetch=False)
+dsg = DiscogsSorterGui()
 
 def root():
     dsg.build_root_elements()

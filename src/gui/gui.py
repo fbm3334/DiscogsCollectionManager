@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from dataclasses import dataclass
 import shutil
 from typing import List, Dict, Any
 
@@ -8,22 +7,10 @@ import tomlkit as tk
 from tomlkit import TOMLDocument
 from tomlkit.exceptions import NonExistentKey
 
-from backend import DiscogsManager, PaginatedReleaseRequest
-
-@dataclass
-class SidebarPage:
-    """Represents a page/item in the sidebar."""
-    key: int
-    label: str
-    icon: str
-    route: str
-
-PAGES = [
-    SidebarPage(key=0, label='Collection', icon='list_alt', route='/'),
-    SidebarPage(key=1, label='Settings', icon='settings', route='/settings'),
-    # You can easily add more pages here without changing the methods
-    # SidebarPage(key=2, label='New Page', icon='add', route='/new'),
-]
+from core.discogs_conn import DiscogsConn
+from core.core_classes import PaginatedReleaseRequest
+from gui.gui_classes import SidebarPage, IDFilterDefinition, StringFilterDefinition
+from gui.gui_constants import PAGES, FILTER_DEFINITIONS, STATIC_COLUMNS
 
 class DiscogsSorterGui:
     '''
@@ -33,17 +20,61 @@ class DiscogsSorterGui:
     INITIAL_PAGE = 0
     BLANKS_LABEL = '[Blanks]'
 
-    def __init__(self, force_fetch: bool = False) -> None:
+    def __init__(self) -> None:
         '''
         Class initialisation method.
-
-        :param force_fetch: Force a fetch from Discogs.
-        :type force_fetch: bool
         '''
-        self.manager = DiscogsManager()
+        self.backend = DiscogsConn()
 
+        self._initialise_state_variables()
+        self._perform_initial_fetch()
+        self._get_lists_filters()
+
+        self.format_list = self.backend.get_unique_formats()
+
+        self.custom_field_data: Dict[int, List[str]] = self.backend.get_all_custom_field_values()
+        self.custom_field_filter_ids: dict[int, list[str]] | None = None 
+        
+        self.load_toml_config()
+
+    def _initialise_state_variables(self):
+        '''
+        Initialise all of the state variables to set up the GUI.
+        '''
+        # Blank config
+        self.config: TOMLDocument
+
+        # Current page
+        self.current_page_key = 0
+
+        # Personal access token
+        self.entered_pat = None
+
+        # Strings
         self.search_query = ''
+        self.progress_string = ''
+        self.progress_stage = ''
 
+        # Filter IDs
+        self.artist_filter_ids = None
+        self.genre_filter_ids = None
+        self.style_filter_ids = None
+        self.label_filter_ids = None
+        self.format_selected_list = None
+
+        # Refresh state
+        self.refresh_flag = False
+        self.refresh_progress_area = None
+        self.refresh_spinner = None
+
+        # Blank table
+        self.table: ui.table
+
+    def _perform_initial_fetch(self):
+        '''
+        Perform an initial fetch of the data from the backend to display it
+        in the table.
+        '''
         # Fetch initial releases
         initial_request = PaginatedReleaseRequest(
             page=0,
@@ -51,7 +82,7 @@ class DiscogsSorterGui:
             sort_by='artist',
             desc=False
         )
-        self.releases, self.num_releases = self.manager.get_releases_paginated(
+        self.releases, self.num_releases = self.backend.get_releases_paginated(
             request=initial_request
         )
 
@@ -64,55 +95,27 @@ class DiscogsSorterGui:
                 'rowsNumber': self.num_releases,
             },
         }
-        self.artist_dict = self.manager.get_all_artists()
-        self.artist_list = []
-        for artist in self.artist_dict:
-            self.artist_list.append(artist.get('name', ''))
 
-        self.genre_dict = self.manager.get_all_genres()
-        self.genre_list = []
-        for genre in self.genre_dict:
-            self.genre_list.append(genre.get('name', ''))
-
-        self.style_dict = self.manager.get_all_styles()
-        self.style_list = []
-        for style in self.style_dict:
-            self.style_list.append(style.get('name', ''))
-
-        self.label_dict = self.manager.get_all_labels()
-        self.label_list = []
-        for label in self.label_dict:
-            self.label_list.append(label.get('name', ''))
-
-        self.format_list = self.manager.get_unique_formats()
-
-        self.entered_pat = None
-        self.artist_filter_ids = None
-        self.genre_filter_ids = None
-        self.style_filter_ids = None
-        self.label_filter_ids = None
-        self.format_selected_list = None
-
-        self.custom_field_data: Dict[int, List[str]] = self.get_all_custom_field_values()
-        self.custom_field_filter_ids: dict[int, list[str]] | None = None 
-        #self.user_settings_dialog = self.create_user_settings_dialog()
+    def _dict_to_list_conversion(self, raw_dict: List[Dict[str, Any]]) -> List[str]:
+        '''
+        Convert a list of dictionaries into a list so it can be represented
+        properly in the GUI.
         
-        self.refresh_flag = False
-        self.refresh_progress_area = None
-        self.progress_string = ""
-        self.progress_stage = ""
-        self.refresh_spinner = None
-        
-        self.config: TOMLDocument
-
-        self.right_drawer = None
-        self.current_page_key = 0
-
-        self.load_toml_config()
-
-        self.table: ui.table
-
-        
+        :param raw_dict: Raw list of dictionaries.
+        :type raw_dict: List[Dict[str, Any]]
+        :return: List containing the items in the dictionaries.
+        :rtype: List[str]
+        '''
+        return [item.get('name', self.BLANKS_LABEL) for item in raw_dict]
+    
+    def _get_lists_filters(self):
+        '''
+        Create the lists to be used for filtering.
+        '''
+        self.artist_list = self._dict_to_list_conversion(self.backend.get_all_artists())
+        self.genre_list = self._dict_to_list_conversion(self.backend.get_all_genres())
+        self.style_list = self._dict_to_list_conversion(self.backend.get_all_styles())
+        self.label_list = self._dict_to_list_conversion(self.backend.get_all_labels())
 
     def load_toml_config(self):
         '''
@@ -121,23 +124,57 @@ class DiscogsSorterGui:
         '''
         # Try to load the config from config.toml
         try:
-            with open('config.toml', 'r', encoding='utf-8') as f:
+            with open('cache/config.toml', 'r', encoding='utf-8') as f:
                 self.config = tk.load(f)
         except FileNotFoundError:
             # If the file isn't found, then copy over the default config
             # and load it.
-            shutil.copyfile('defaultconfig.toml', 'config.toml')
-            with open('config.toml', 'r', encoding='utf-8') as f:
+            shutil.copyfile('defaultconfig.toml', 'cache/config.toml')
+            with open('cache/config.toml', 'r', encoding='utf-8') as f:
                 self.config = tk.load(f)
-        
-        print(self.config)
 
     def save_toml_config(self):
         '''
         Save the TOML config.
         '''
-        with open('config.toml', 'w', encoding='utf-8') as f:
+        with open('cache/config.toml', 'w', encoding='utf-8') as f:
             tk.dump(self.config, f)
+    
+    def _get_custom_field_columns(self) -> List[Dict[str, Any]]:
+        '''
+        Generates custom field columns from the dynamically configured custom
+        fields.
+        
+        :return: List of custom field columns, each item being a dictionary.
+        :rtype: List[Dict[str, Any]]
+        '''
+        custom_columns = []
+    
+        # Safely get the CustomFields configuration section, defaulting to an empty dict
+        custom_field_config = self.config.get('CustomFields', {})
+        
+        for custom_field_id in self.backend.get_custom_field_ids_set():
+            field_key = f'field_{custom_field_id}'
+            
+            # Use dict.get() for safer lookup instead of try/except
+            # tk.TOMLDocument behaves like a dict here
+            name = custom_field_config.get(field_key)
+            
+            if name is None:
+                # Create the default name if the key doesn't exist in config
+                name = f'Custom Field {custom_field_id}' 
+                
+            field_name = f'custom_{custom_field_id}'
+            
+            custom_columns.append(
+                {'name': field_name,
+                'label': name,
+                'field': field_name,
+                'sortable': True, 
+                'style': 'text-wrap: wrap'}
+            )
+        return custom_columns
+
 
     def get_columns(self) -> List[Dict[str, Any]]:
         '''
@@ -146,39 +183,9 @@ class DiscogsSorterGui:
         :return: A list containing column dictionaries.
         :rtype: list
         '''
-        column_list = [
-            {'name': 'thumb', 'label': 'Art', 'field': 'thumb_url', 'sortable': False},
-            {'name': 'id', 'label': 'ID', 'field': 'id', 'sortable': True},
-            {'name': 'artist_name', 'label': 'Artist', 'field': 'artist_name', 'sortable': True, 
-             'style': 'text-wrap: wrap'},
-            {'name': 'title', 'label': 'Title', 'field': 'title', 'sortable': True, 
-             'style': 'text-wrap: wrap'},
-            {'name': 'label_name', 'label': 'Label', 'field': 'label_name', 'sortable': True, 
-             'style': 'text-wrap: wrap'},
-            {'name': 'catno', 'label': 'Cat No', 'field': 'catno', 'sortable': False, 
-             'style': 'text-wrap: wrap'},
-            {'name': 'genres', 'label': 'Genres', 'field': 'genres', 'sortable': True, 
-             'style': 'text-wrap: wrap'},
-            {'name': 'style_name', 'label': 'Styles', 'field': 'style_name', 'sortable': True, 
-             'style': 'text-wrap: wrap'},
-            {'name': 'year', 'label': 'Year', 'field': 'year', 'sortable': True},
-            {'name': 'format', 'label': 'Format', 'field': 'format', 'sortable': True},
-            {'name': 'release_url', 'label': 'Discogs Link', 'field': 'release_url', 'sortable': False},
-        ]
-        for custom_field in self.manager.get_custom_field_ids_set():
-            # Try to get the user-set custon name, else use a default
-            try:
-                name = self.config['CustomFields'][f'field_{custom_field}']
-            except NonExistentKey:
-                name = f'Field {custom_field}'
+        column_list = list(STATIC_COLUMNS)
+        column_list.extend(self._get_custom_field_columns())
 
-            column_list.append(
-                {'name': f'custom_{custom_field}',
-                 'label': name,
-                 'field': f'custom_{custom_field}',
-                 'sortable': True, 
-                 'style': 'text-wrap: wrap'}
-            )
         return column_list
     
     def _toggle_columns(self, column: dict, visible: bool):
@@ -206,10 +213,26 @@ class DiscogsSorterGui:
             page=0,
             page_size=1
         )
-        _, count = self.manager.get_releases_paginated(request)
+        _, count = self.backend.get_releases_paginated(request)
         self.table_data['pagination']['rowsNumber'] = count
         return count
     
+    def _normalise_pagination_request(self, request: Any) -> dict:
+        '''
+        Normalises the pagination request from a NiceGUI request or a manual
+        dictionary.
+
+        :param request: Request to normalise.
+        :type request: Any
+        :return: Dictionary containing the normalised request.
+        :rtype: dict
+        '''
+        if isinstance(request, dict):
+            return request.get('args', {}).get('pagination', {})
+    
+        # Assumes request is a NiceGUI Request object if not a dict
+        return getattr(request, 'args', {}).get('pagination', {})
+
     def do_pagination(self, request):
         '''
         Handles the table requests for searching, sorting and pagination,
@@ -217,10 +240,7 @@ class DiscogsSorterGui:
 
         :param request: Request for table
         '''
-        if isinstance(request, dict):
-            new_pagination = request['args']['pagination']
-        else:
-            new_pagination = request.args['pagination']
+        new_pagination = self._normalise_pagination_request(request)
 
         pagination = self.table_data['pagination']
         pagination.update(new_pagination)
@@ -233,8 +253,6 @@ class DiscogsSorterGui:
         if pagination_sort is None:
             pagination_sort = 'artist'
             pagination_desc = False
-        
-        print('Filtr ID', self.label_filter_ids)
 
         request = PaginatedReleaseRequest(
             page=pagination['page'] - 1,
@@ -249,10 +267,8 @@ class DiscogsSorterGui:
             formats=self.format_selected_list,
             custom_field_filters=self.custom_field_filter_ids
         )
-        print('Request update!', request)
-        new_rows, count = self.manager.get_releases_paginated(
-            request
-        )
+
+        new_rows, count = self.backend.get_releases_paginated(request)
 
         self.table_data['pagination']['rowsNumber'] = count
 
@@ -285,106 +301,52 @@ class DiscogsSorterGui:
         self.search_query = query.value
         self._send_manual_pagination_request()
 
-    def artist_select_callback(self, query):
+    def _generic_select_callback(self, filter_type: str, id_lookup_method, query):
         '''
-        Callback function for artist selection.
+        A generic callback function for all ID-based selection filters 
+        (Artist, Genre, Style, Label).
 
-        :param query: Artist selection query.
+        :param filter_type: The base name of the filter ('artist', 'genre', 'style', 'label').
+        :type filter_type: str
+        :param id_lookup_method: The DiscogsManager method used to find the ID by name.
+        :param query: The multiselect query object from NiceGUI (contains selected values).
         '''
-        
         name_list = query.value
         id_list = []
         
         for name in name_list:
-            id_list.append(self.manager.get_artist_id_by_name(name))
-
+            # Calls self.manager.get_artist_id_by_name(name) or similar
+            id_list.append(id_lookup_method(name)) 
         
-        if len(id_list) < 1:
-            self.artist_filter_ids = None
+        # Dynamically set the correct filter attribute
+        # Example: If filter_type is 'artist', this sets self.artist_filter_ids
+        attribute_name = f'{filter_type}_filter_ids'
+        
+        if id_list:
+            setattr(self, attribute_name, id_list)
+            print(f"Set {attribute_name}: {id_list}") # Replace with proper logging
         else:
-            self.artist_filter_ids = id_list
-            print(self.artist_filter_ids)
-
-        self._send_manual_pagination_request()
+            setattr(self, attribute_name, None)
         
-
-    def genre_select_callback(self, query):
-        '''
-        Callback function for genre selection.
-
-        :param query: Genre selection query.
-        '''
-        genre_list = query.value
-        id_list = []
-        
-        for genre in genre_list:
-            id_list.append(self.manager.get_genre_id_by_name(genre))
-
-        
-        if len(id_list) < 1:
-            self.genre_filter_ids = None
-        else:
-            self.genre_filter_ids = id_list
-
+        # Trigger the UI update
         self._send_manual_pagination_request()
 
-    def style_select_callback(self, query):
+    def _generic_string_callback(self, attribute_name: str, query):
         '''
-        Callback function for style selection.
+        A generic callback function for string-based selection filters (e.g., Format).
 
-        :param query: Style selection query.
+        :param attribute_name: The name of the instance attribute to update (e.g., 'format_selected_list').
+        :param query: The multiselect query object (contains selected values).
         '''
-        style_list = query.value
-        id_list = []
-        
-        for style in style_list:
-            id_list.append(self.manager.get_style_id_by_name(style))
+        selected_values = query.value
 
-        
-        if len(id_list) < 1:
-            self.style_filter_ids = None
+        if selected_values:
+            # Set the attribute to the list of selected strings
+            setattr(self, attribute_name, selected_values)
+            print(f"Set {attribute_name}: {selected_values}") # Replace with proper logging
         else:
-            self.style_filter_ids = id_list
-
-        self._send_manual_pagination_request()
-
-    def label_select_callback(self, query):
-        '''
-        Callback function for label selection.
-
-        :param query: Style selection query.
-        '''
-        label_list = query.value
-        id_list = []
-        
-        for label in label_list:
-            id_list.append(self.manager.get_label_id_by_name(label))
-
-        print(id_list)
-        if len(id_list) < 1:
-            self.label_filter_ids = None
-        else:
-            self.label_filter_ids = id_list
-
-        self._send_manual_pagination_request()
-
-    def format_select_callback(self, query):
-        '''
-        Callback function for format selection.
-
-        :param query: Style selection query.
-        '''
-        format_list = query.value
-        temp_format_list = []
-        
-        for format_sel in format_list:
-            temp_format_list.append(format_sel)
-
-        print(temp_format_list)
-        if len(temp_format_list) < 1:
-            self.format_selected_list = None
-        else:
-            self.format_selected_list = temp_format_list
+            # Clear the filter
+            setattr(self, attribute_name, None)
 
         self._send_manual_pagination_request()
 
@@ -413,45 +375,7 @@ class DiscogsSorterGui:
 
         self._send_manual_pagination_request()
     
-    def get_all_custom_field_values(self) -> Dict[int, List[str]]:
-        '''
-        Fetches all unique values for each custom field from the DB, 
-        including a special (Blanks) option for NULL/empty values.
-        
-        :returns: A dictionary mapping field_id (int) to a list of unique values (str).
-        :rtype: Dict[int, List[str]]
-        '''
-        custom_field_data = {}
-        with self.manager.get_db_connection() as conn:
-            for field_id in self.manager.get_custom_field_ids_set():
-                table_name = f'custom_field_{field_id}'
-                
-                # Fetch all values, including NULL/empty
-                query = f'''
-                SELECT DISTINCT
-                    field_value
-                FROM {table_name}
-                ORDER BY field_value ASC;
-                '''
-                cursor = conn.execute(query)
-                
-                values = []
-                has_blanks = False
-                for row in cursor.fetchall():
-                    value = row[0]
-                    print(row, value)
-                    if value is None or (isinstance(value, str) and value.strip() == ''):
-                        # Found a blank or NULL value
-                        has_blanks = True
-                    else:
-                        # Add non-blank values
-                        values.append(value)
-
-                
-                values.insert(0, self.BLANKS_LABEL) # Add it at the start
-                        
-                custom_field_data[field_id] = values
-        return custom_field_data
+    
 
     @ui.refreshable
     def paginated_table(self):
@@ -485,9 +409,9 @@ class DiscogsSorterGui:
         '''
         self.save_pat_callback()
         try:
-            result = self.manager.toggle_discogs_connection()
+            result = self.backend.toggle_discogs_connection()
             if result is True:
-                ui.notify(f'Discogs connected as user {self.manager.user.username}.')
+                ui.notify(f'Discogs connected as user {self.backend.user.username}.')
             else:
                 ui.notify('Discogs disconnected.')
         except ValueError:
@@ -498,7 +422,7 @@ class DiscogsSorterGui:
         Save the new personal access token.
         '''
         if self.entered_pat is not None:
-            self.manager.save_token(self.entered_pat.value)
+            self.backend.save_token(self.entered_pat.value)
     
     def user_settings_dialog_callback(self):
         '''
@@ -512,15 +436,15 @@ class DiscogsSorterGui:
         Build the settings menu with callbacks etc.
         '''
         with ui.row().classes('items-center justify-between w-70'):
-                if self.manager.user is not None:
-                    ui.label(f'Connected as {self.manager.user.username}')
+                if self.backend.user is not None:
+                    ui.label(f'Connected as {self.backend.user.username}')
                 else:
                     ui.label('Disconnected from Discogs')
                 ui.space()
                 with ui.button(icon='settings'):
                     with ui.menu().props('auto-close'):
                         # Check whether Discogs is connected or not
-                        if self.manager.user is not None:
+                        if self.backend.user is not None:
                             ui.menu_item('Disconnect from Discogs', 
                                             on_click=self.discogs_connection_toggle_callback)
                         else:
@@ -528,6 +452,7 @@ class DiscogsSorterGui:
                         ui.menu_item('User settings', on_click=self.user_settings_dialog_callback)
                         ui.menu_item('Refresh', on_click=self.start_refresh)
 
+    
     async def start_refresh(self):
         '''
         Asynchronously start a refresh from the Discogs API.
@@ -546,10 +471,10 @@ class DiscogsSorterGui:
                 return
             ui.notify('Started refresh...')
             self.progress_stage = "Fetching collection"
-            await run.io_bound(self.manager.fetch_collection, self.update_progress_string)
+            await run.io_bound(self.backend.fetch_collection)
             ui.notify('Fetching artist sort names...')
             self.progress_stage = "Fetching artist sort names"
-            await run.io_bound(self.manager.fetch_artist_sort_names, self.update_progress_string)
+            await run.io_bound(self.backend.fetch_artist_sort_names, self.update_progress_string)
             ui.notify('Refresh complete.')
             self._send_manual_pagination_request()
             self.paginated_table.refresh()
@@ -593,34 +518,47 @@ class DiscogsSorterGui:
         progress_percentage = (current / total) * 100.0
         self.progress_string = f'{self.progress_stage} ({progress_percentage:.1f}%)'
         self.footer_update_text.refresh()
+    
+    # Adjust the type hint to accept either of the new dataclasses
+    def _build_select_filter(self, definition: IDFilterDefinition | StringFilterDefinition):
+        """Builds a single ui.select element based on the provided dataclass definition."""
+        
+        # 1. Get the list of options from the instance attribute (e.g., self.artist_list)
+        options_list = getattr(self, definition.data_list_attr)
+        
+        # 2. Determine the correct callback logic
+        if definition.callback_type == 'string':
+            # --- String-based filter (Format) ---
+            # The IDE knows 'definition' is a StringFilterDefinition here
+            callback = lambda query: self._generic_string_callback(
+                definition.attribute_name, query
+            )
+        else:
+            # --- ID-based filter (Artist, Genre, etc.) ---
+            # The IDE knows 'definition' is an IDFilterDefinition here
+            
+            # Get the actual manager method (e.g., self.manager.get_artist_id_by_name)
+            lookup_method = getattr(self.backend, definition.manager_lookup)
+            
+            callback = lambda query: self._generic_select_callback(
+                definition.filter_type, lookup_method, query
+            )
+
+        # 3. Build the UI element
+        ui.select(
+            options_list, 
+            multiple=True, 
+            label=definition.label, # Use dot notation
+            with_input=True, 
+            on_change=callback
+        ).classes('w-70').props('use-chips')
 
     def build_filter_dropdowns(self):
         '''
         Build the filter dropdowns.
         '''
-        ui.select(
-            self.artist_list, multiple=True, label='Artist Filter',
-            with_input=True, on_change=self.artist_select_callback
-            ).classes('w-70').props('use-chips')
-        ui.select(
-            self.genre_list, multiple=True, label='Genre Filter',
-            with_input=True, on_change=self.genre_select_callback
-            ).classes('w-70').props('use-chips')
-        
-        ui.select(
-            self.style_list, multiple=True, label='Style Filter',
-            with_input=True, on_change=self.style_select_callback
-            ).classes('w-70').props('use-chips')
-        
-        ui.select(
-            self.label_list, multiple=True, label='Label Filter',
-            with_input=True, on_change=self.label_select_callback
-            ).classes('w-70').props('use-chips')
-        
-        ui.select(
-            self.format_list, multiple=True, label='Format Filter',
-            with_input=True, on_change=self.format_select_callback
-            ).classes('w-70').props('use-chips')
+        for definition in FILTER_DEFINITIONS:
+            self._build_select_filter(definition)
         
         for field_id, values in self.custom_field_data.items():
             # Get the user-defined name from the config (or default)
@@ -718,7 +656,7 @@ class DiscogsSorterGui:
             self.config.add('CustomFields', new_table)
 
         ui.label('Custom Field Names').classes('text-xl font-bold')
-        for label in self.manager.get_custom_field_ids_set():
+        for label in self.backend.get_custom_field_ids_set():
             with ui.row().classes('items-center w-full'):
                 ui.label(f'Custom field {label} name')
                 ui.space()
@@ -757,7 +695,6 @@ class DiscogsSorterGui:
 
         for column in self.table.columns:
             # If the value exists, then create the key-value pairs
-            print(column['field'])
             # If the field doesn't exist in the config table, create it, else
             # update the table accordingly
             if column['field'] not in config_table:
@@ -815,9 +752,9 @@ class DiscogsSorterGui:
         '''
         formatted_string = self.config['Updates']['update_time'].strftime(self.config['Updates']['update_time_display_format'])
         ui.markdown(f'**Last update:** {formatted_string}')
-        if self.manager.user is not None:
+        if self.backend.user is not None:
             ui.icon('link', size='24px').classes('p-0')
-            ui.label(f'Connected to Discogs as {self.manager.user.username}')
+            ui.label(f'Connected to Discogs as {self.backend.user.username}')
         else:
             ui.icon('link_off', size='24px').classes('p-0')
             ui.label('Disconnected from Discogs')
