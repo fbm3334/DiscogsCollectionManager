@@ -183,8 +183,8 @@ class DatabaseManager:
         cursor = conn.cursor()
 
         cursor.execute("DELETE FROM release_genres WHERE release_id = ?", (rel_id,))
-        for g in basic_info.get("genres", []):
-            g_id = self._insert_lookup(cursor, "genres", "name", g)
+        for genre in basic_info.get("genres", []):
+            g_id = self._insert_lookup(cursor, "genres", "name", genre)
             cursor.execute("INSERT INTO release_genres VALUES (?, ?)", (rel_id, g_id))
 
         cursor.execute("DELETE FROM release_styles WHERE release_id = ?", (rel_id,))
@@ -193,9 +193,9 @@ class DatabaseManager:
             cursor.execute("INSERT INTO release_styles VALUES (?, ?)", (rel_id, s_id))
 
         cursor.execute("DELETE FROM release_labels WHERE release_id = ?", (rel_id,))
-        for l in basic_info.get("labels", []):
-            l_name = l.get("name")
-            l_cat = l.get("catno")
+        for label in basic_info.get("labels", []):
+            l_name = label.get("name")
+            l_cat = label.get("catno")
             l_id = self._insert_lookup(cursor, "labels", "name", l_name)
             cursor.execute(
                 "INSERT INTO release_labels VALUES (?, ?, ?)", (rel_id, l_id, l_cat)
@@ -364,7 +364,11 @@ class DatabaseManager:
             return f"r.{sort_by} {order_dir}"
 
     def _build_in_condition(
-        self, column: str, values: list, conditions: list, params: list
+        self,
+        column: str,
+        values: list[int] | list[str] | None,
+        conditions: list,
+        params: list,
     ) -> None:
         """
         Helper for simple filters like Artist ID or Format, using IN (?).
@@ -387,7 +391,12 @@ class DatabaseManager:
             params.extend(values)
 
     def _build_subquery_in_condition(
-        self, table: str, column: str, ids: list[int], conditions: list, params: list
+        self,
+        table: str,
+        column: str,
+        ids: list[int] | None,
+        conditions: list,
+        params: list,
     ) -> None:
         """
         Helper for many-to-many filters (Genre, Style, Label) using subqueries.
@@ -947,7 +956,7 @@ class DatabaseManager:
                 cursor = conn.execute(query)
 
                 values = []
-                has_blanks = False
+                # has_blanks = False
                 for row in cursor.fetchall():
                     value = row[0]
                     print(row, value)
@@ -955,7 +964,8 @@ class DatabaseManager:
                         isinstance(value, str) and value.strip() == ""
                     ):
                         # Found a blank or NULL value
-                        has_blanks = True
+                        # has_blanks = True
+                        pass
                     else:
                         # Add non-blank values
                         values.append(value)
