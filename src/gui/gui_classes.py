@@ -16,8 +16,8 @@ class IDFilterDefinition:
     label: str
     data_list_attr: str      # The name of the list attribute on self (e.g., 'artist_list')
     manager_lookup: str      # The manager method name (e.g., 'get_artist_id_by_name')
-    attribute_name: str = 'Unused'
     filter_type: str         # The base name for the filter attribute (e.g., 'artist')
+    attribute_name: str = 'Unused'
     callback_type: str = 'id'
 
 @dataclass(frozen=True)
