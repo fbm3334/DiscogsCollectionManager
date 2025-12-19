@@ -1,16 +1,23 @@
 from datetime import datetime, timezone
 import shutil
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TypedDict, Union
 
 from nicegui import ui, run
+from nicegui.elements.spinner import Spinner
 import tomlkit as tk
 from tomlkit import TOMLDocument
 from tomlkit.exceptions import NonExistentKey
+from tomlkit.items import Table
 
 from core.discogs_conn import DiscogsConn
 from core.core_classes import PaginatedReleaseRequest
-from gui.gui_classes import SidebarPage, IDFilterDefinition, StringFilterDefinition
+from gui.gui_classes import IDFilterDefinition, StringFilterDefinition
 from gui.gui_constants import PAGES, FILTER_DEFINITIONS, STATIC_COLUMNS
+
+
+class PaginatedTableData(TypedDict):
+    rows: List[Dict[str, Any]]
+    pagination: Dict[str, Any]
 
 
 class DiscogsSorterGui:
@@ -69,7 +76,7 @@ class DiscogsSorterGui:
         # Refresh state
         self.refresh_flag = False
         self.refresh_progress_area = None
-        self.refresh_spinner = None
+        self.refresh_spinner: Spinner = None
 
         # Blank table
         self.table: ui.table
@@ -88,7 +95,7 @@ class DiscogsSorterGui:
         )
 
         # Table code inspired by https://github.com/zauberzeug/nicegui/discussions/1903#discussioncomment-8251437
-        self.table_data = {
+        self.table_data: PaginatedTableData = {
             "rows": self.releases,
             "pagination": {
                 "page": self.INITIAL_PAGE,
@@ -419,12 +426,13 @@ class DiscogsSorterGui:
         self.save_pat_callback()
         try:
             result = self.backend.toggle_discogs_connection()
-            if result is True:
+            if result is True and hasattr(self.backend.user, "username"):
                 ui.notify(f"Discogs connected as user {self.backend.user.username}.")
             else:
                 ui.notify("Discogs disconnected.")
         except ValueError:
             ui.notify("No personal access token entered.", type="warning")
+
 
     def save_pat_callback(self):
         """
@@ -433,40 +441,60 @@ class DiscogsSorterGui:
         if self.entered_pat is not None:
             self.backend.save_token(self.entered_pat.value)
 
-    def user_settings_dialog_callback(self):
+    def _set_nested_config_value(self, path: Union[str, List[str]], value: Any):
         """
-        User settings dialog callback.
-        """
-        self.user_settings_dialog.open()
+        Sets a value in self.config using a list of keys or a dot-separated string.
+        Example: self.set_nested_value("Updates.update_time", datetime.now())
 
-    @ui.refreshable
-    def build_settings_menu(self):
+        :param path: Path to the config.
+        :value: Value of the config to set,
         """
-        Build the settings menu with callbacks etc.
+        if isinstance(path, str):
+            path = path.split(".")
+
+        # Start at the root of the TOML document
+        cursor = self.config
+
+        # Traverse to the second-to-last key
+        for key in path[:-1]:
+            if key not in cursor:
+                cursor[key] = tk.table()
+
+            # Ensure the current level is treated as a Table to allow subscripting
+            cursor = cursor[key]
+            if not isinstance(cursor, Table):
+                # This handles cases where a key exists but isn't a table (e.g., a string)
+                raise TypeError(f"Key '{key}' exists but is not a table/dictionary.")
+
+        # Set the final value
+        cursor[path[-1]] = value
+
+    def _get_nested_config_value(
+        self, path: Union[str, List[str]], default: Any = None
+    ) -> Any:
         """
-        with ui.row().classes("items-center justify-between w-70"):
-            if self.backend.user is not None:
-                ui.label(f"Connected as {self.backend.user.username}")
-            else:
-                ui.label("Disconnected from Discogs")
-            ui.space()
-            with ui.button(icon="settings"):
-                with ui.menu().props("auto-close"):
-                    # Check whether Discogs is connected or not
-                    if self.backend.user is not None:
-                        ui.menu_item(
-                            "Disconnect from Discogs",
-                            on_click=self.discogs_connection_toggle_callback,
-                        )
-                    else:
-                        ui.menu_item(
-                            "Connect to Discogs",
-                            on_click=self.discogs_connection_toggle_callback,
-                        )
-                    ui.menu_item(
-                        "User settings", on_click=self.user_settings_dialog_callback
-                    )
-                    ui.menu_item("Refresh", on_click=self.start_refresh)
+        Retrieves a value from self.config using a list of keys or a dot-separated string.
+        Returns 'default' if the path does not exist.
+
+        :param path: Path to the config value.
+        :param default: Default value to return if not found.
+        :return: Value or default value if not foumd.
+        """
+        if isinstance(path, str):
+            path = path.split(".")
+
+        cursor = self.config
+
+        for key in path:
+            try:
+                # Attempt to move deeper into the document
+                cursor = cursor[key]
+            except (KeyError, TypeError):
+                # KeyError: key doesn't exist
+                # TypeError: we tried to index into a non-dictionary (like a string)
+                return default
+
+        return cursor
 
     async def start_refresh(self):
         """
@@ -500,7 +528,9 @@ class DiscogsSorterGui:
             self.paginated_table.refresh()
             print("All done")
             self.refresh_flag = False
-            self.config["Updates"]["update_time"] = datetime.now(timezone.utc)
+            self._set_nested_config_value(
+                "Updates.update_time", datetime.now(timezone.utc)
+            )
             self.save_toml_config()
             self.refresh_spinner.set_visibility(False)
             self.progress_string = ""
@@ -514,14 +544,18 @@ class DiscogsSorterGui:
         - Auto-update is enabled.
         - Enough time has elapsed.
         """
-        if self.config["Updates"]["auto_update"] is True:
+        if self._get_nested_config_value("Updates.auto_update") is True:
             current_time = datetime.now(timezone.utc).timestamp()
-            prev_time = self.config["Updates"]["update_time"].timestamp()
-            update_interval_secs = self.config["Updates"]["update_interval"] * 60 * 60
+            prev_time = self._get_nested_config_value("Updates.update_time").timestamp()
+            update_interval_secs = (
+                self._get_nested_config_value("Updates.update_interval") * 60 * 60
+            )
             time_diff = current_time - prev_time
 
             if time_diff > update_interval_secs:
-                self.config["Updates"]["update_time"] = datetime.now(timezone.utc)
+                self._set_nested_config_value(
+                    "Updates.update_time", datetime.now(timezone.utc)
+                )
                 self.save_toml_config()
                 await self.start_refresh()
             else:
@@ -551,9 +585,8 @@ class DiscogsSorterGui:
         if definition.callback_type == "string":
             # --- String-based filter (Format) ---
             # The IDE knows 'definition' is a StringFilterDefinition here
-            callback = lambda query: self._generic_string_callback(
-                definition.attribute_name, query
-            )
+            def callback(query):
+                return self._generic_string_callback(definition.attribute_name, query)
         else:
             # --- ID-based filter (Artist, Genre, etc.) ---
             # The IDE knows 'definition' is an IDFilterDefinition here
@@ -561,9 +594,10 @@ class DiscogsSorterGui:
             # Get the actual manager method (e.g., self.manager.get_artist_id_by_name)
             lookup_method = getattr(self.backend, definition.manager_lookup)
 
-            callback = lambda query: self._generic_select_callback(
-                definition.filter_type, lookup_method, query
-            )
+            def callback(query):
+                return self._generic_select_callback(
+                    definition.filter_type, lookup_method, query
+                )
 
         # 3. Build the UI element
         ui.select(
@@ -584,7 +618,7 @@ class DiscogsSorterGui:
         for field_id, values in self.custom_field_data.items():
             # Get the user-defined name from the config (or default)
             try:
-                name = self.config["CustomFields"][f"field_{field_id}"]
+                name = self._get_nested_config_value(f"CustomFields.field_{field_id}")
             except NonExistentKey:
                 name = f"Custom Field {field_id}"
 
@@ -733,16 +767,24 @@ class DiscogsSorterGui:
             new_table = tk.table(is_super_table=True)
             self.config.add(table_name, new_table)
 
-        config_table = self.config[table_name]
-
         for column in self.table.columns:
             # If the value exists, then create the key-value pairs
             # If the field doesn't exist in the config table, create it, else
             # update the table accordingly
-            if column["field"] not in config_table:
-                config_table[column["field"]] = True
+            if (
+                self._get_nested_config_value(f"ColumnVisibility.{column['field']}")
+                is None
+            ):
+                self._set_nested_config_value(
+                    f"ColumnVisibility.{column['field']}", True
+                )
             else:
-                self._toggle_columns(column, config_table[column["field"]])
+                self._toggle_columns(
+                    column,
+                    self._get_nested_config_value(
+                        f"ColumnVisibility.{column['field']}"
+                    ),
+                )
 
     def _build_column_show_hide_settings(self):
         """
@@ -798,9 +840,9 @@ class DiscogsSorterGui:
         """
         Function for the footer text - updateable.
         """
-        formatted_string = self.config["Updates"]["update_time"].strftime(
-            self.config["Updates"]["update_time_display_format"]
-        )
+        formatted_string = self._get_nested_config_value(
+            "Updates.update_time"
+        ).strftime(self._get_nested_config_value("Updates.update_time_display_format"))
         ui.markdown(f"**Last update:** {formatted_string}")
         if self.backend.user is not None:
             ui.icon("link", size="24px").classes("p-0")
