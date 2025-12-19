@@ -82,7 +82,7 @@ class DiscogsConn:
         custom_field_ids = set()
         for item in releases_list:
             if item.notes:
-                for note in item.notes:
+                for note in item.notes:  # ty:ignore[not-iterable]
                     custom_field_id = note["field_id"]
                     print(custom_field_id)
                     custom_field_ids.add(custom_field_id)
@@ -104,7 +104,8 @@ class DiscogsConn:
             self.identity()
 
         print("Fetching from Discogs API...")
-        releases_to_process = self.user.collection_folders[0].releases
+        if hasattr(self.user, "collection_folders"):
+            releases_to_process = self.user.collection_folders[0].releases
         total_releases = len(releases_to_process)
 
         custom_field_ids = set()
@@ -138,16 +139,17 @@ class DiscogsConn:
         """
 
         # Fetch artist details from API (Rate limits apply)
-        artist_obj = self.client.artist(artist_id)
+        # artist_obj = self.client.artist(artist_id)
 
         # Find a related release to get the 'artists_sort' field
 
         first_release_id = self.db.get_first_release_from_artist(artist_id)
 
         if first_release_id is not None:
-            release = self.client.release(first_release_id[0])
-            release.refresh()  # Ensure full data
-            return release.data.get("artists_sort", default_name)
+            if hasattr(self.client, "release"):
+                release = self.client.release(first_release_id[0])
+                release.refresh()  # Ensure full data
+                return release.data.get("artists_sort", default_name)
         else:
             return default_name
 
