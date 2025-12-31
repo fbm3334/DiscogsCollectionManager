@@ -1,0 +1,8 @@
+# Exclude the project virtual environment from image builds
+.venv
+
+# Exclude the cache folder
+cache/
+
+# Exclude the secrets.txt
+secrets.txt

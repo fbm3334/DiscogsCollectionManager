@@ -48,6 +48,6 @@ server_mode: Any = args.server
 
 logging.log(logging.DEBUG, f"Server mode is {'Active' if server_mode else 'Inactive (windowed mode)'}")
 
-ui.run(root, favicon="🎧", title="Discogs Collection Manager", native=not server_mode)
+ui.run(root, favicon="🎧", title="Discogs Collection Manager", native=not server_mode, port=9876)
 
 app.timer(interval=1, callback=dsg.start_auto_refresh, once=True)
