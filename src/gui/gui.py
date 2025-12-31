@@ -753,7 +753,7 @@ class DiscogsSorterGui:
         :param visible: Visibility status
         :type visible: bool
         """
-        logging.log(logging.DEBUG, column, visible)
+        logging.log(logging.DEBUG, f"{column}, {visible}")
         self._toggle_columns(column, visible)
         self.table.update()
         self.save_toml_config()

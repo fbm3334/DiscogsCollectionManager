@@ -22,7 +22,7 @@ class DiscogsConn:
         self.db = DatabaseManager()
         self.user = None
         self.client = None
-        pass
+        self.load_token()
 
     def load_token(self):
         """
