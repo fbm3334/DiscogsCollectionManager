@@ -501,6 +501,8 @@ class DiscogsSorterGui:
         """
         Asynchronously start a refresh from the Discogs API.
         """
+        logging.log(logging.DEBUG, "Refresh called")
+        logging.log(logging.DEBUG, f"Current state of refresh flag = {self.refresh_flag}")
         if self.refresh_flag is False:
             self.refresh_flag = True
             self.refresh_spinner.set_visibility(True)

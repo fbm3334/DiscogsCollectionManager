@@ -53,6 +53,7 @@ class DiscogsConn:
         """
         Connect to Discogs API using the personal access token.
         """
+        logging.log(logging.DEBUG, "Attempting to connect to Discogs...")
         if not self.pat:
             raise ValueError("No Personal Access Token found.")
         self.client = dc.Client(self.CLIENT_NAME, user_token=self.pat)
