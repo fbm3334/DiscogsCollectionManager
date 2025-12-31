@@ -50,4 +50,4 @@ logging.log(logging.DEBUG, f"Server mode is {'Active' if server_mode else 'Inact
 
 ui.run(root, favicon="🎧", title="Discogs Collection Manager", native=not server_mode, port=9876)
 
-app.timer(interval=1, callback=dsg.start_auto_refresh, once=True)
+app.timer(interval=5, callback=dsg.start_auto_refresh, once=True)
