@@ -1,6 +1,7 @@
 import re
 import logging
 import os
+from pathlib import Path
 from typing import Dict, List
 
 import discogs_client as dc
@@ -12,7 +13,10 @@ class DiscogsConn:
     """
     Wrapper class for managing connections to the Discogs database.
     """
-
+    CORE_DIR = Path(__file__).resolve().parent
+    BASE_DIR = CORE_DIR.parent.parent
+    CACHE_FOLDER = BASE_DIR / "cache"
+    SECRETS_LOCATION = CACHE_FOLDER / "secrets.txt"
     CLIENT_NAME = "FBM3334Client/0.3"
     REGEX_STRING = r"^\s*(?:the|a|el|la|los|las|un|una|le|la|les|un|une|il|lo|la|gli|le|ein|eine)\s+"
 
@@ -23,16 +27,40 @@ class DiscogsConn:
         self.user = None
         self.client = None
         self.load_token()
+        logging.debug(f'State of PAT after initialisation = {self.pat}')
 
     def load_token(self):
         """
         Load personal access token from secrets text file.
         """
         try:
-            with open("secrets.txt", "r", encoding="utf-8") as file:
-                self.pat = file.readline()
+            with open(self.SECRETS_LOCATION, "r", encoding="utf-8") as file:
+                pat = str(file.readline())
+                logging.debug(f'Retrieved PAT = {pat} with length {len(pat)}')
+                if len(pat) > 0:
+                    self.pat = pat
+                else:
+                    self.pat = None
         except FileNotFoundError:
             self.pat = None
+
+    def check_token(self) -> bool:
+        """Check that a personal access token is present.
+
+        Returns:
+            bool: True if a PAT is present, or False if not.
+        """
+        if self.pat is not None:
+            return True
+        return False
+
+    def get_token(self) -> str:
+        """Get the personal access token as a string.
+
+        Returns:
+            str: Personal access token.
+        """
+        return str(self.pat)
 
     def save_token(self, token):
         """
@@ -42,11 +70,11 @@ class DiscogsConn:
         """
         self.pat = token
         try:
-            with open("secrets.txt", "x", encoding="utf-8") as file:
+            with open(self.SECRETS_LOCATION, "x", encoding="utf-8") as file:
                 file.write(f"{token}")
         except FileExistsError:
-            os.remove("secrets.txt")
-            with open("secrets.txt", "x", encoding="utf-8") as file:
+            os.remove(self.SECRETS_LOCATION)
+            with open(self.SECRETS_LOCATION, "x", encoding="utf-8") as file:
                 file.write(f"{token}")
 
     def connect_client(self):
@@ -54,6 +82,7 @@ class DiscogsConn:
         Connect to Discogs API using the personal access token.
         """
         logging.log(logging.DEBUG, "Attempting to connect to Discogs...")
+        logging.debug(self.pat)
         if not self.pat:
             raise ValueError("No Personal Access Token found.")
         self.client = dc.Client(self.CLIENT_NAME, user_token=self.pat)
@@ -231,16 +260,12 @@ class DiscogsConn:
         :return: Boolean of the Discogs connection status.
         :rtype: bool
         """
-
+        # Connect to API
+        self.connect_client()
+        self.identity()
         if self.user is not None:
-            self.user = None
-            return False
-        else:
-            # Connect to API
-            self.connect_client()
-            self.identity()
-            if self.user is not None:
-                return True
+            logging.warning(f"User = {self.user}")
+            return True
 
         return False
 

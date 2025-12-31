@@ -76,6 +76,7 @@ class DiscogsSorterGui:
 
         # Refresh state
         self.refresh_flag = False
+        logging.log(logging.DEBUG, f"Current state of refresh flag = {self.refresh_flag}")
         self.refresh_progress_area = None
         self.refresh_spinner: Spinner = None
 
@@ -420,10 +421,11 @@ class DiscogsSorterGui:
         self.table.classes("virtual-scroll h-[calc(100vh-200px)] w-full max-w-none")
         self.table.on("request", self.do_pagination)
 
-    def discogs_connection_toggle_callback(self):
+    def discogs_connection_callback(self):
         """
-        Discogs connection toggle callback function.
+        Discogs connection callback function.
         """
+        logging.debug('Connection callback triggered')
         self.save_pat_callback()
         try:
             result = self.backend.toggle_discogs_connection()
@@ -431,14 +433,20 @@ class DiscogsSorterGui:
                 ui.notify(f"Discogs connected as user {self.backend.user.username}.")
             else:
                 ui.notify("Discogs disconnected.")
+            self.footer_text.refresh()
         except ValueError:
-            ui.notify("No personal access token entered.", type="warning")
+            self.raise_personal_access_token_warning()
 
+    def raise_personal_access_token_warning(self):
+        """Raise the personal access token warning.
+        """
+        ui.notify("No Discogs personal access token entered - go to Settings to add one.", type="warning")
 
     def save_pat_callback(self):
         """
         Save the new personal access token.
         """
+        logging.debug(f'PAT = {self.entered_pat}')
         if self.entered_pat is not None:
             self.backend.save_token(self.entered_pat.value)
 
@@ -501,14 +509,13 @@ class DiscogsSorterGui:
         """
         Asynchronously start a refresh from the Discogs API.
         """
-        logging.log(logging.DEBUG, "Refresh called")
-        logging.log(logging.DEBUG, f"Current state of refresh flag = {self.refresh_flag}")
-        if self.refresh_flag is False:
+        logging.debug('Refresh called')
+        if self.refresh_flag is False and self.backend.check_token() is True:
             self.refresh_flag = True
             self.refresh_spinner.set_visibility(True)
             # self.refresh_progress_area.set_visibility(True)
             try:
-                self.discogs_connection_toggle_callback()
+                self.discogs_connection_callback()
             except ValueError:
                 ui.notify(
                     "Could not refresh - go to User Settings \
@@ -520,7 +527,7 @@ class DiscogsSorterGui:
                 return
             ui.notify("Started refresh...")
             self.progress_stage = "Fetching collection"
-            await run.io_bound(self.backend.fetch_collection)
+            await run.io_bound(self.backend.fetch_collection, self.update_progress_string)
             ui.notify("Fetching artist sort names...")
             self.progress_stage = "Fetching artist sort names"
             await run.io_bound(
@@ -531,6 +538,7 @@ class DiscogsSorterGui:
             self.paginated_table.refresh()
             logging.log(logging.DEBUG, "All done")
             self.refresh_flag = False
+            logging.log(logging.DEBUG, f"Current state of refresh flag = {self.refresh_flag}")
             self._set_nested_config_value(
                 "Updates.update_time", datetime.now(timezone.utc)
             )
@@ -539,6 +547,9 @@ class DiscogsSorterGui:
             self.progress_string = ""
             self.footer_update_text.refresh()
             self.footer_text.refresh()
+        else:
+            if self.backend.check_token() is False:
+                self.raise_personal_access_token_warning()
 
     async def start_auto_refresh(self):
         """
@@ -689,11 +700,14 @@ class DiscogsSorterGui:
         )
         with ui.row().classes("items-center"):
             self.entered_pat = ui.input(
-                label="Paste the personal access token here"
+                label="Paste the personal access token here",
+                value = self.backend.get_token(),
+                password=True,
+                password_toggle_button=True
             ).classes("w-70")
             with ui.button_group():
                 ui.button("Save", on_click=self.save_pat_callback)
-                ui.button("Connect", on_click=self.discogs_connection_toggle_callback)
+                ui.button("Connect", on_click=self.discogs_connection_callback)
 
     def _build_update_settings(self):
         """
@@ -753,7 +767,6 @@ class DiscogsSorterGui:
         :param visible: Visibility status
         :type visible: bool
         """
-        logging.log(logging.DEBUG, f"{column}, {visible}")
         self._toggle_columns(column, visible)
         self.table.update()
         self.save_toml_config()
