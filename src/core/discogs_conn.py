@@ -1,4 +1,5 @@
 import re
+import logging
 import os
 from typing import Dict, List
 
@@ -6,7 +7,6 @@ import discogs_client as dc
 
 from core.database_manager import DatabaseManager
 from core.core_classes import PaginatedReleaseRequest
-
 
 class DiscogsConn:
     """
@@ -84,7 +84,6 @@ class DiscogsConn:
             if item.notes:
                 for note in item.notes:  # ty:ignore[not-iterable]
                     custom_field_id = note["field_id"]
-                    print(custom_field_id)
                     custom_field_ids.add(custom_field_id)
         return custom_field_ids
 
@@ -103,7 +102,6 @@ class DiscogsConn:
         if not self.user:
             self.identity()
 
-        print("Fetching from Discogs API...")
         if hasattr(self.user, "collection_folders"):
             releases_to_process = self.user.collection_folders[0].releases
         total_releases = len(releases_to_process)
@@ -177,7 +175,7 @@ class DiscogsConn:
         try:
             return self._fetch_sort_name_from_api(artist_id, artist_name)
         except Exception as e:
-            print(f"Error fetching sort name for {artist_name}: {e}")
+            logging.log(logging.DEBUG, f"Error fetching sort name for {artist_name}: {e}")
             return artist_name  # Fallback to regular name on error
 
     def _process_and_batch_updates(self, artists_to_check, progress_callback):

@@ -959,7 +959,6 @@ class DatabaseManager:
                 # has_blanks = False
                 for row in cursor.fetchall():
                     value = row[0]
-                    print(row, value)
                     if value is None or (
                         isinstance(value, str) and value.strip() == ""
                     ):

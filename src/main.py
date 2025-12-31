@@ -6,12 +6,17 @@ Main running file.
 
 import argparse
 from argparse import Namespace
+import logging
 import multiprocessing
 from typing import Any
 
 from nicegui import ui, app
 
 from gui.gui import DiscogsSorterGui
+
+logging.basicConfig(
+    level=logging.DEBUG
+)
 
 multiprocessing.set_start_method(method="spawn", force=True)
 
@@ -41,7 +46,7 @@ args: Namespace = parser.parse_args()
 
 server_mode: Any = args.server
 
-print(f"Server mode is {'Active' if server_mode else 'Inactive (windowed mode)'}")
+logging.log(logging.DEBUG, f"Server mode is {'Active' if server_mode else 'Inactive (windowed mode)'}")
 
 ui.run(root, favicon="🎧", title="Discogs Collection Manager", native=not server_mode)
 

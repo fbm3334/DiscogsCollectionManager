@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 import shutil
 from typing import List, Dict, Any, TypedDict, Union
 
@@ -334,7 +335,7 @@ class DiscogsSorterGui:
 
         if id_list:
             setattr(self, attribute_name, id_list)
-            print(f"Set {attribute_name}: {id_list}")  # Replace with proper logging
+            logging.log(logging.DEBUG, f"Set {attribute_name}: {id_list}")  # Replace with proper logging
         else:
             setattr(self, attribute_name, None)
 
@@ -353,7 +354,7 @@ class DiscogsSorterGui:
         if selected_values:
             # Set the attribute to the list of selected strings
             setattr(self, attribute_name, selected_values)
-            print(
+            logging.log(logging.DEBUG, 
                 f"Set {attribute_name}: {selected_values}"
             )  # Replace with proper logging
         else:
@@ -526,7 +527,7 @@ class DiscogsSorterGui:
             ui.notify("Refresh complete.")
             self._send_manual_pagination_request()
             self.paginated_table.refresh()
-            print("All done")
+            logging.log(logging.DEBUG, "All done")
             self.refresh_flag = False
             self._set_nested_config_value(
                 "Updates.update_time", datetime.now(timezone.utc)
@@ -559,7 +560,7 @@ class DiscogsSorterGui:
                 self.save_toml_config()
                 await self.start_refresh()
             else:
-                print("Not auto updating.")
+                logging.log(logging.DEBUG, "Not auto updating.")
 
     def update_progress_string(self, current, total):
         """
@@ -648,7 +649,7 @@ class DiscogsSorterGui:
             ui.navigate.to(target_page.route)
         else:
             # Handle case where key is not found (optional)
-            print(f"Error: Page with key {page_key} not found.")
+            logging.log(logging.DEBUG, f"Error: Page with key {page_key} not found.")
 
         self.build_left_drawer.refresh()
 
@@ -750,7 +751,7 @@ class DiscogsSorterGui:
         :param visible: Visibility status
         :type visible: bool
         """
-        print(column, visible)
+        logging.log(logging.DEBUG, column, visible)
         self._toggle_columns(column, visible)
         self.table.update()
         self.save_toml_config()
@@ -871,7 +872,7 @@ class DiscogsSorterGui:
                 with ui.menu(), ui.column().classes("gap-0 p-2"):
                     self._build_column_show_hide_settings()
         except AttributeError:
-            print("Show/hide button not added.")
+            logging.log(logging.DEBUG, "Show/hide button not added.")
 
     def build_main_ui(self):
         """
