@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import logging
 import shutil
-from typing import List, Dict, Any, TypedDict, Union
+from typing import List, Dict, Any, Union
 
 from nicegui import ui, run
 from nicegui.elements.spinner import Spinner
@@ -11,14 +11,9 @@ from tomlkit.exceptions import NonExistentKey
 from tomlkit.items import Table
 
 from core.discogs_conn import DiscogsConn
-from core.core_classes import PaginatedReleaseRequest
+from core.core_classes import PaginatedReleaseRequest, PaginatedTableData
 from gui.gui_classes import IDFilterDefinition, StringFilterDefinition
 from gui.gui_constants import PAGES, FILTER_DEFINITIONS, STATIC_COLUMNS
-
-
-class PaginatedTableData(TypedDict):
-    rows: List[Dict[str, Any]]
-    pagination: Dict[str, Any]
 
 
 class DiscogsSorterGui:
@@ -76,7 +71,9 @@ class DiscogsSorterGui:
 
         # Refresh state
         self.refresh_flag = False
-        logging.log(logging.DEBUG, f"Current state of refresh flag = {self.refresh_flag}")
+        logging.log(
+            logging.DEBUG, f"Current state of refresh flag = {self.refresh_flag}"
+        )
         self.refresh_progress_area = None
         self.refresh_spinner: Spinner = None
 
@@ -336,7 +333,9 @@ class DiscogsSorterGui:
 
         if id_list:
             setattr(self, attribute_name, id_list)
-            logging.log(logging.DEBUG, f"Set {attribute_name}: {id_list}")  # Replace with proper logging
+            logging.log(
+                logging.DEBUG, f"Set {attribute_name}: {id_list}"
+            )  # Replace with proper logging
         else:
             setattr(self, attribute_name, None)
 
@@ -355,8 +354,8 @@ class DiscogsSorterGui:
         if selected_values:
             # Set the attribute to the list of selected strings
             setattr(self, attribute_name, selected_values)
-            logging.log(logging.DEBUG, 
-                f"Set {attribute_name}: {selected_values}"
+            logging.log(
+                logging.DEBUG, f"Set {attribute_name}: {selected_values}"
             )  # Replace with proper logging
         else:
             # Clear the filter
@@ -425,7 +424,7 @@ class DiscogsSorterGui:
         """
         Discogs connection callback function.
         """
-        logging.debug('Connection callback triggered')
+        logging.debug("Connection callback triggered")
         self.save_pat_callback()
         try:
             result = self.backend.toggle_discogs_connection()
@@ -438,15 +437,17 @@ class DiscogsSorterGui:
             self.raise_personal_access_token_warning()
 
     def raise_personal_access_token_warning(self):
-        """Raise the personal access token warning.
-        """
-        ui.notify("No Discogs personal access token entered - go to Settings to add one.", type="warning")
+        """Raise the personal access token warning."""
+        ui.notify(
+            "No Discogs personal access token entered - go to Settings to add one.",
+            type="warning",
+        )
 
     def save_pat_callback(self):
         """
         Save the new personal access token.
         """
-        logging.debug(f'PAT = {self.entered_pat}')
+        logging.debug(f"PAT = {self.entered_pat}")
         if self.entered_pat is not None:
             self.backend.save_token(self.entered_pat.value)
 
@@ -509,7 +510,7 @@ class DiscogsSorterGui:
         """
         Asynchronously start a refresh from the Discogs API.
         """
-        logging.debug('Refresh called')
+        logging.debug("Refresh called")
         if self.refresh_flag is False and self.backend.check_token() is True:
             self.refresh_flag = True
             self.refresh_spinner.set_visibility(True)
@@ -527,7 +528,9 @@ class DiscogsSorterGui:
                 return
             ui.notify("Started refresh...")
             self.progress_stage = "Fetching collection"
-            await run.io_bound(self.backend.fetch_collection, self.update_progress_string)
+            await run.io_bound(
+                self.backend.fetch_collection, self.update_progress_string
+            )
             ui.notify("Fetching artist sort names...")
             self.progress_stage = "Fetching artist sort names"
             await run.io_bound(
@@ -538,7 +541,9 @@ class DiscogsSorterGui:
             self.paginated_table.refresh()
             logging.log(logging.DEBUG, "All done")
             self.refresh_flag = False
-            logging.log(logging.DEBUG, f"Current state of refresh flag = {self.refresh_flag}")
+            logging.log(
+                logging.DEBUG, f"Current state of refresh flag = {self.refresh_flag}"
+            )
             self._set_nested_config_value(
                 "Updates.update_time", datetime.now(timezone.utc)
             )
@@ -701,9 +706,9 @@ class DiscogsSorterGui:
         with ui.row().classes("items-center"):
             self.entered_pat = ui.input(
                 label="Paste the personal access token here",
-                value = self.backend.get_token(),
+                value=self.backend.get_token(),
                 password=True,
-                password_toggle_button=True
+                password_toggle_button=True,
             ).classes("w-70")
             with ui.button_group():
                 ui.button("Save", on_click=self.save_pat_callback)
