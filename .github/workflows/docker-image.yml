@@ -7,12 +7,32 @@ on:
     branches: [ "main" ]
 
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
+    # Added permissions to allow the action to write to GitHub Packages
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag discogscollectionmanager_docker:$(date +%s)
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and Push the Docker image
+      run: |
+        # Define the image name (must be lowercase)
+        IMAGE_ID=ghcr.io/${{ github.repository_owner }}/discogscollectionmanager
+        IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
+        VERSION=$(date +%s)
+        
+        echo "Building $IMAGE_ID:$VERSION"
+        
+        docker build . --file Dockerfile --tag $IMAGE_ID:$VERSION --tag $IMAGE_ID:latest
+        docker push $IMAGE_ID:$VERSION
+        docker push $IMAGE_ID:latest
