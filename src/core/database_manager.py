@@ -1,6 +1,8 @@
 import os
 import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
+import logging
 from typing import Dict, List
 
 from core.core_classes import PaginatedReleaseRequest
@@ -11,8 +13,10 @@ class DatabaseManager:
     Database manager class for maintaining and getting data from the SQLite
     database.
     """
-
-    CACHE_FOLDER = "cache"
+    # Core directory location.
+    CORE_DIR = Path(__file__).resolve().parent
+    BASE_DIR = CORE_DIR.parent.parent
+    CACHE_FOLDER = BASE_DIR / "cache"
     BLANKS_LABEL = "[Blanks]"
 
     def __init__(self):
@@ -20,6 +24,10 @@ class DatabaseManager:
         Class initialisation function
         """
         self.custom_ids = set()
+        # Ensure the database and tables exist immediately
+        self.init_db() 
+        # Load any existing custom field tables into memory
+        self._load_custom_field_ids_from_db()
 
     def get_db_path(self):
         """
@@ -27,8 +35,8 @@ class DatabaseManager:
 
         :return: Path to SQLite database file.
         """
-        os.makedirs(self.CACHE_FOLDER, exist_ok=True)
-        return os.path.join(self.CACHE_FOLDER, "collection.db")
+        self.CACHE_FOLDER.mkdir(parents=True, exist_ok=True)
+        return self.CACHE_FOLDER / "collection.db"
 
     @contextmanager
     def get_db_connection(self):
@@ -47,11 +55,16 @@ class DatabaseManager:
         Initialise the database by creating normalised tables if they don't
         exist.
         """
-        with open("core/table_schema.txt", "r", encoding="utf-8") as schema_file:
-            schema = schema_file.read()
-            with self.get_db_connection() as conn:
-                conn.executescript(schema)
-                conn.commit()
+        schema_path = self.CORE_DIR / "table_schema.txt"
+
+        if not schema_path.exists():
+            raise FileNotFoundError(f"Schema not found at {schema_path}")
+
+        schema = schema_path.read_text(encoding="utf-8")
+        
+        with self.get_db_connection() as conn:
+            conn.executescript(schema)
+            conn.commit()
 
     def _insert_lookup(self, cursor, table, name_col, value):
         """
@@ -225,6 +238,7 @@ class DatabaseManager:
                 field_id = note.get("field_id")
                 # Create the table
                 self.create_custom_field_db(conn, field_id)
+                logging.debug(f"Creating custom field ID {field_id}")
 
         cursor = conn.cursor()
         if notes is not None:
@@ -959,7 +973,6 @@ class DatabaseManager:
                 # has_blanks = False
                 for row in cursor.fetchall():
                     value = row[0]
-                    print(row, value)
                     if value is None or (
                         isinstance(value, str) and value.strip() == ""
                     ):
