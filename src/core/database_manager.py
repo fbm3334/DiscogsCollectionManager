@@ -2,6 +2,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
+import logging
 from typing import Dict, List
 
 from core.core_classes import PaginatedReleaseRequest
@@ -237,6 +238,7 @@ class DatabaseManager:
                 field_id = note.get("field_id")
                 # Create the table
                 self.create_custom_field_db(conn, field_id)
+                logging.debug(f"Creating custom field ID {field_id}")
 
         cursor = conn.cursor()
         if notes is not None:
