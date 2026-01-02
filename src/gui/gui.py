@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import logging
+from pathlib import Path
 import shutil
 from typing import List, Dict, Any, Union
 
@@ -24,6 +25,9 @@ class DiscogsSorterGui:
     INITIAL_PAGE_SIZE = 20
     INITIAL_PAGE = 0
     BLANKS_LABEL = "[Blanks]"
+    CORE_DIR = Path(__file__).resolve().parent
+    BASE_DIR = CORE_DIR.parent.parent
+    CACHE_FOLDER = BASE_DIR / "cache"
 
     def __init__(self) -> None:
         """
@@ -914,3 +918,11 @@ class DiscogsSorterGui:
         self.paginated_table()
         self.table.update()
         self._build_column_show_hide_button.refresh()
+    
+    def clear_cache(self):
+        """Clear the cache and rebuild the database.
+        """
+        # Clear the cache and rebuild the database at the backend.
+        self.backend.clear_cache_rebuild_db()
+        # Copy the default TOML configuration by calling a load
+        self.load_toml_config()

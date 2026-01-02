@@ -25,9 +25,10 @@ class DatabaseManager:
         """
         self.custom_ids = set()
         # Ensure the database and tables exist immediately
-        self.init_db() 
+        self.init_db()
         # Load any existing custom field tables into memory
         self._load_custom_field_ids_from_db()
+        logging.debug("Full database initialisation done.")
 
     def get_db_path(self):
         """
@@ -65,6 +66,7 @@ class DatabaseManager:
         with self.get_db_connection() as conn:
             conn.executescript(schema)
             conn.commit()
+        logging.debug('Database tables created.')
 
     def _insert_lookup(self, cursor, table, name_col, value):
         """

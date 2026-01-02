@@ -1,7 +1,8 @@
-import re
 import logging
 import os
 from pathlib import Path
+import re
+import shutil
 from typing import Dict, List
 
 import discogs_client as dc
@@ -383,3 +384,12 @@ class DiscogsConn:
         :rtype: int | None
         """
         return self.db.get_label_id_by_name(label)
+
+    def clear_cache_rebuild_db(self):
+        """Clear the cache files and rebuild the database.
+        """
+        # Clear the cache folder
+        shutil.rmtree(self.CACHE_FOLDER)
+        self.CACHE_FOLDER.mkdir()
+        # Initialise the database again
+        self.db = DatabaseManager()
