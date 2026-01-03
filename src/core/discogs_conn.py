@@ -61,7 +61,7 @@ class DiscogsConn:
         Returns:
             str: Personal access token.
         """
-        return str(self.pat)
+        return str(self.pat) if self.pat is not None else ""
 
     def save_token(self, token):
         """

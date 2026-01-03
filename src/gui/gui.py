@@ -704,16 +704,21 @@ class DiscogsSorterGui:
         """
         ui.label("Discogs Settings").classes("text-xl font-bold")
         ui.label("Discogs Access Token").classes("text-l font-bold")
-        ui.markdown(
-            "Go to the [Discogs developers](https://www.discogs.com/settings/developers) settings page to generate a personal access token."
-        )
+        with ui.row().classes("items-center"):
+            ui.label("Go to the ")
+            ui.link(
+                "Discogs developer settings page",
+                "https://www.discogs.com/settings/developers",
+                new_tab=True,
+            )
+            ui.label(" to generate a personal access token.")
         with ui.row().classes("items-center"):
             self.entered_pat = ui.input(
                 label="Paste the personal access token here",
                 value=self.backend.get_token(),
                 password=True,
                 password_toggle_button=True,
-            ).classes("w-70")
+            ).classes("w-100")
             with ui.button_group():
                 ui.button("Save", on_click=self.save_pat_callback)
                 ui.button("Connect", on_click=self.discogs_connection_callback)
@@ -918,10 +923,9 @@ class DiscogsSorterGui:
         self.paginated_table()
         self.table.update()
         self._build_column_show_hide_button.refresh()
-    
+
     def clear_cache(self):
-        """Clear the cache and rebuild the database.
-        """
+        """Clear the cache and rebuild the database."""
         # Clear the cache and rebuild the database at the backend.
         self.backend.clear_cache_rebuild_db()
         # Copy the default TOML configuration by calling a load
