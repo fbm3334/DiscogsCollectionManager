@@ -10,3 +10,7 @@ update_time_display_format = "%A %x %H:%M"
 field_1 = "Media Condition"
 field_2 = "Sleeve Condition"
 field_3 = "Notes"
+
+[Sorting]
+pull_name_sort_from_discogs = true
+thorough_name_fetch = false

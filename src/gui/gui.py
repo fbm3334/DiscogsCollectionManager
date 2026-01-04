@@ -830,6 +830,26 @@ class DiscogsSorterGui:
                 ),
             ).bind_value(self.config[table_name], column["field"])
 
+    def _build_sort_settings(self):
+        ui.label("Name Sorting").classes("text-xl font-bold")
+        ui.label(
+            "This option controls whether to pull the name sorting data from Discogs\
+                 or not. This can be useful for multilingual libraries for example."
+        )
+        ui.switch(
+            "Pull name sort from Discogs", on_change=self._update_sort_settings
+        ).bind_value(self.config["Sorting"], "pull_name_sort_from_discogs")
+        ui.switch(
+            "Thorough name fetch", on_change=self._update_sort_settings
+        ).bind_value(self.config["Sorting"], "thorough_name_fetch")
+
+    def _update_sort_settings(self):
+        """Update the sort settings."""
+        self.backend.update_sort_settings(
+            self.config["Sorting"]["pull_name_sort_from_discogs"],
+            self.config["Sorting"]["thorough_name_fetch"],
+        )
+
     def build_settings_page(self):
         """
         Build the settings page.
@@ -839,6 +859,8 @@ class DiscogsSorterGui:
         self._build_update_settings()
         ui.separator().classes("w-full")
         self._build_custom_field_name_settings()
+        ui.separator().classes("w-full")
+        self._build_sort_settings()
 
     def build_root_elements(self):
         """
