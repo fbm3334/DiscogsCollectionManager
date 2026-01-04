@@ -140,6 +140,8 @@ class DiscogsConn:
 
         self.db.add_releases_to_db(output_list)
 
+        self.db._load_custom_field_ids_from_db()
+
     def _fetch_sort_name_from_api(self, artist_id, default_name):
         """
         Uses the Discogs client to find the accurate sort name.

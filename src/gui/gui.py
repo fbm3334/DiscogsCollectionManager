@@ -556,6 +556,11 @@ class DiscogsSorterGui:
             self.progress_string = ""
             self.footer_update_text.refresh()
             self.footer_text.refresh()
+            logging.debug(self.backend.get_custom_field_ids_set())
+            self.custom_field_data: Dict[int, List[str]] = (
+                self.backend.get_all_custom_field_values()
+            )
+            self.build_filter_dropdowns.refresh()
         else:
             if self.backend.check_token() is False:
                 self.raise_personal_access_token_warning()
@@ -631,6 +636,7 @@ class DiscogsSorterGui:
             on_change=callback,
         ).classes("w-70").props("use-chips")
 
+    @ui.refreshable
     def build_filter_dropdowns(self):
         """
         Build the filter dropdowns.
