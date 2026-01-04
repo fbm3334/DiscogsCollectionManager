@@ -103,25 +103,6 @@ class DiscogsConn:
         self.user = self.client.identity()
         return self.user
 
-    def get_custom_field_ids(
-        self, releases_list: list[dc.CollectionItemInstance]
-    ) -> set:
-        """
-        Extract custom field IDs from a list of CollectionItemInstance objects.
-
-        :param releases_list: List of CollectionItemInstance objects
-        :type releases_list: list[dc.CollectionItemI`nstance]
-        :return: Set of custom field IDs
-        :rtype: set
-        """
-        custom_field_ids = set()
-        for item in releases_list:
-            if item.notes:
-                for note in item.notes:  # ty:ignore[not-iterable]
-                    custom_field_id = note["field_id"]
-                    custom_field_ids.add(custom_field_id)
-        return custom_field_ids
-
     def fetch_collection(self, progress_callback=None):
         """
         Fetches the collection from Discogs and updates the databases.
