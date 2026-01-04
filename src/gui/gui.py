@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import logging
+from pathlib import Path
 import shutil
 from typing import List, Dict, Any, Union
 
@@ -24,6 +25,9 @@ class DiscogsSorterGui:
     INITIAL_PAGE_SIZE = 20
     INITIAL_PAGE = 0
     BLANKS_LABEL = "[Blanks]"
+    CORE_DIR = Path(__file__).resolve().parent
+    BASE_DIR = CORE_DIR.parent.parent
+    CACHE_FOLDER = BASE_DIR / "cache"
 
     def __init__(self) -> None:
         """
@@ -552,6 +556,11 @@ class DiscogsSorterGui:
             self.progress_string = ""
             self.footer_update_text.refresh()
             self.footer_text.refresh()
+            logging.debug(self.backend.get_custom_field_ids_set())
+            self.custom_field_data: Dict[int, List[str]] = (
+                self.backend.get_all_custom_field_values()
+            )
+            self.build_filter_dropdowns.refresh()
         else:
             if self.backend.check_token() is False:
                 self.raise_personal_access_token_warning()
@@ -627,6 +636,7 @@ class DiscogsSorterGui:
             on_change=callback,
         ).classes("w-70").props("use-chips")
 
+    @ui.refreshable
     def build_filter_dropdowns(self):
         """
         Build the filter dropdowns.
@@ -700,16 +710,21 @@ class DiscogsSorterGui:
         """
         ui.label("Discogs Settings").classes("text-xl font-bold")
         ui.label("Discogs Access Token").classes("text-l font-bold")
-        ui.markdown(
-            "Go to the [Discogs developers](https://www.discogs.com/settings/developers) settings page to generate a personal access token."
-        )
+        with ui.row().classes("items-center"):
+            ui.label("Go to the ")
+            ui.link(
+                "Discogs developer settings page",
+                "https://www.discogs.com/settings/developers",
+                new_tab=True,
+            )
+            ui.label(" to generate a personal access token.")
         with ui.row().classes("items-center"):
             self.entered_pat = ui.input(
                 label="Paste the personal access token here",
                 value=self.backend.get_token(),
                 password=True,
                 password_toggle_button=True,
-            ).classes("w-70")
+            ).classes("w-100")
             with ui.button_group():
                 ui.button("Save", on_click=self.save_pat_callback)
                 ui.button("Connect", on_click=self.discogs_connection_callback)
@@ -821,6 +836,26 @@ class DiscogsSorterGui:
                 ),
             ).bind_value(self.config[table_name], column["field"])
 
+    def _build_sort_settings(self):
+        ui.label("Name Sorting").classes("text-xl font-bold")
+        ui.label(
+            "This option controls whether to pull the name sorting data from Discogs\
+                 or not. This can be useful for multilingual libraries for example."
+        )
+        ui.switch(
+            "Pull name sort from Discogs", on_change=self._update_sort_settings
+        ).bind_value(self.config["Sorting"], "pull_name_sort_from_discogs")
+        ui.switch(
+            "Thorough name fetch", on_change=self._update_sort_settings
+        ).bind_value(self.config["Sorting"], "thorough_name_fetch")
+
+    def _update_sort_settings(self):
+        """Update the sort settings."""
+        self.backend.update_sort_settings(
+            self.config["Sorting"]["pull_name_sort_from_discogs"],
+            self.config["Sorting"]["thorough_name_fetch"],
+        )
+
     def build_settings_page(self):
         """
         Build the settings page.
@@ -830,6 +865,8 @@ class DiscogsSorterGui:
         self._build_update_settings()
         ui.separator().classes("w-full")
         self._build_custom_field_name_settings()
+        ui.separator().classes("w-full")
+        self._build_sort_settings()
 
     def build_root_elements(self):
         """
@@ -914,3 +951,10 @@ class DiscogsSorterGui:
         self.paginated_table()
         self.table.update()
         self._build_column_show_hide_button.refresh()
+
+    def clear_cache(self):
+        """Clear the cache and rebuild the database."""
+        # Clear the cache and rebuild the database at the backend.
+        self.backend.clear_cache_rebuild_db()
+        # Copy the default TOML configuration by calling a load
+        self.load_toml_config()

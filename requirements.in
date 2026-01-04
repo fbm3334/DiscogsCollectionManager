@@ -1,5 +1,0 @@
-python3_discogs_client >=2.8.0,<3.0.0
-nicegui >=3.3.0,<4.0.0
-tomlkit >=0.13.0,<1.0.0
-pywebview >=6.1,<7.0
-pywebview[qt] >=6.1, <7.0; sys_platform == 'linux'

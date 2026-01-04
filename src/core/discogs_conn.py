@@ -1,7 +1,8 @@
-import re
 import logging
 import os
 from pathlib import Path
+import re
+import shutil
 from typing import Dict, List
 
 import discogs_client as dc
@@ -9,10 +10,12 @@ import discogs_client as dc
 from core.database_manager import DatabaseManager
 from core.core_classes import PaginatedReleaseRequest
 
+
 class DiscogsConn:
     """
     Wrapper class for managing connections to the Discogs database.
     """
+
     CORE_DIR = Path(__file__).resolve().parent
     BASE_DIR = CORE_DIR.parent.parent
     CACHE_FOLDER = BASE_DIR / "cache"
@@ -27,7 +30,9 @@ class DiscogsConn:
         self.user = None
         self.client = None
         self.load_token()
-        logging.debug(f'State of PAT after initialisation = {self.pat}')
+        logging.debug(f"State of PAT after initialisation = {self.pat}")
+        self.pull_name_sort_from_discogs = True
+        self.thorough_name_fetch = False
 
     def load_token(self):
         """
@@ -36,7 +41,7 @@ class DiscogsConn:
         try:
             with open(self.SECRETS_LOCATION, "r", encoding="utf-8") as file:
                 pat = str(file.readline())
-                logging.debug(f'Retrieved PAT = {pat} with length {len(pat)}')
+                logging.debug(f"Retrieved PAT = {pat} with length {len(pat)}")
                 if len(pat) > 0:
                     self.pat = pat
                 else:
@@ -60,7 +65,7 @@ class DiscogsConn:
         Returns:
             str: Personal access token.
         """
-        return str(self.pat)
+        return str(self.pat) if self.pat is not None else ""
 
     def save_token(self, token):
         """
@@ -98,33 +103,11 @@ class DiscogsConn:
         self.user = self.client.identity()
         return self.user
 
-    def get_custom_field_ids(
-        self, releases_list: list[dc.CollectionItemInstance]
-    ) -> set:
-        """
-        Extract custom field IDs from a list of CollectionItemInstance objects.
-
-        :param releases_list: List of CollectionItemInstance objects
-        :type releases_list: list[dc.CollectionItemI`nstance]
-        :return: Set of custom field IDs
-        :rtype: set
-        """
-        custom_field_ids = set()
-        for item in releases_list:
-            if item.notes:
-                for note in item.notes:  # ty:ignore[not-iterable]
-                    custom_field_id = note["field_id"]
-                    custom_field_ids.add(custom_field_id)
-        return custom_field_ids
-
     def fetch_collection(self, progress_callback=None):
         """
         Fetches the collection from Discogs and updates the databases.
         :param progress_callback: Optional callback to report progress
         :type progress_callback: callable
-
-        :return: List of collection items.
-        :rtype: list
         """
         output_list = []
         if not self.client:
@@ -157,6 +140,8 @@ class DiscogsConn:
 
         self.db.add_releases_to_db(output_list)
 
+        self.db._load_custom_field_ids_from_db()
+
     def _fetch_sort_name_from_api(self, artist_id, default_name):
         """
         Uses the Discogs client to find the accurate sort name.
@@ -169,8 +154,11 @@ class DiscogsConn:
         # Fetch artist details from API (Rate limits apply)
         # artist_obj = self.client.artist(artist_id)
 
-        # Find a related release to get the 'artists_sort' field
+        # If name sort is disabled, then don't bother sorting, just return the default name
+        if self.pull_name_sort_from_discogs is False:
+            return default_name
 
+        # Find a related release to get the 'artists_sort' field
         first_release_id = self.db.get_first_release_from_artist(artist_id)
 
         if first_release_id is not None:
@@ -195,7 +183,7 @@ class DiscogsConn:
         :param artist_id: Artist ID.
         :param artist_name: Artist name.
         """
-        thorough = False
+        thorough = self.thorough_name_fetch
 
         # 1. Simple Check (Fast Path)
         if not thorough and not self._check_artist_prefix(artist_name):
@@ -205,8 +193,23 @@ class DiscogsConn:
         try:
             return self._fetch_sort_name_from_api(artist_id, artist_name)
         except Exception as e:
-            logging.log(logging.DEBUG, f"Error fetching sort name for {artist_name}: {e}")
+            logging.log(
+                logging.DEBUG, f"Error fetching sort name for {artist_name}: {e}"
+            )
             return artist_name  # Fallback to regular name on error
+
+    def update_sort_settings(self, pull: bool, thorough: bool):
+        """Update the sort settings.
+
+        Args:
+            pull (bool): Pull the name sorts from Discogs.
+            thorough (bool): Thorough pull - fetch every sort name.
+        """
+        self.pull_name_sort_from_discogs = pull
+        self.thorough_name_fetch = thorough
+        logging.debug(
+            f"Pull = {self.pull_name_sort_from_discogs}, Thorough = {self.thorough_name_fetch}"
+        )
 
     def _process_and_batch_updates(self, artists_to_check, progress_callback):
         """
@@ -383,3 +386,11 @@ class DiscogsConn:
         :rtype: int | None
         """
         return self.db.get_label_id_by_name(label)
+
+    def clear_cache_rebuild_db(self):
+        """Clear the cache files and rebuild the database."""
+        # Clear the cache folder
+        shutil.rmtree(self.CACHE_FOLDER)
+        self.CACHE_FOLDER.mkdir()
+        # Initialise the database again
+        self.db = DatabaseManager()

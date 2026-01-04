@@ -1,8 +1,9 @@
-import os
-import sqlite3
 from contextlib import contextmanager
-from pathlib import Path
 import logging
+import os
+from pathlib import Path
+import sqlite3
+from sqlite3 import Connection, Cursor
 from typing import Dict, List
 
 from core.core_classes import PaginatedReleaseRequest
@@ -13,6 +14,7 @@ class DatabaseManager:
     Database manager class for maintaining and getting data from the SQLite
     database.
     """
+
     # Core directory location.
     CORE_DIR = Path(__file__).resolve().parent
     BASE_DIR = CORE_DIR.parent.parent
@@ -25,11 +27,12 @@ class DatabaseManager:
         """
         self.custom_ids = set()
         # Ensure the database and tables exist immediately
-        self.init_db() 
+        self._init_db()
         # Load any existing custom field tables into memory
         self._load_custom_field_ids_from_db()
+        logging.debug("Full database initialisation done.")
 
-    def get_db_path(self):
+    def _get_db_path(self):
         """
         Get the path to the SQLite database file.
 
@@ -39,18 +42,18 @@ class DatabaseManager:
         return self.CACHE_FOLDER / "collection.db"
 
     @contextmanager
-    def get_db_connection(self):
+    def _get_db_connection(self):
         """
         Context manager for database connections.
         """
-        conn = sqlite3.connect(self.get_db_path())
+        conn = sqlite3.connect(self._get_db_path())
         conn.row_factory = sqlite3.Row  # Allows accessing columns by name
         try:
             yield conn
         finally:
             conn.close()
 
-    def init_db(self):
+    def _init_db(self):
         """
         Initialise the database by creating normalised tables if they don't
         exist.
@@ -61,20 +64,28 @@ class DatabaseManager:
             raise FileNotFoundError(f"Schema not found at {schema_path}")
 
         schema = schema_path.read_text(encoding="utf-8")
-        
-        with self.get_db_connection() as conn:
+
+        with self._get_db_connection() as conn:
             conn.executescript(schema)
             conn.commit()
+        logging.debug("Database tables created.")
 
-    def _insert_lookup(self, cursor, table, name_col, value):
+    def _insert_lookup(
+        self, cursor: Cursor, table: str, name_col: str, value: str
+    ) -> int | None:
         """
         Helper to insert a value into lookup tables and return ID.
 
         :param cursor: SQLite cursor
+        :type cursor: Cursor
         :param table: Table name
+        :type table: str
         :param name_col: Column name for the value
+        :type name_col: str
         :param value: Value to insert/look up
+        :type value: str
         :return: ID of the inserted or existing row
+        :rtype: int | None
         """
         if not value:
             return None
@@ -89,11 +100,12 @@ class DatabaseManager:
         cursor.execute(f"INSERT INTO {table} ({name_col}) VALUES (?)", (value,))
         return cursor.lastrowid
 
-    def _save_release_to_release_db(self, conn, basic_info: dict):
+    def _save_release_to_release_db(self, conn: Connection, basic_info: dict):
         """
         Upserts the release into the main releases database.
 
         :param conn: Database connection
+        :type conn: Connection
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
         """
@@ -131,7 +143,7 @@ class DatabaseManager:
         # Query the SQLite master table to find all tables matching the pattern
         query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'custom_field_%';"
 
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             cursor = conn.execute(query)
             for row in cursor.fetchall():
                 table_name = row["name"]
@@ -152,11 +164,12 @@ class DatabaseManager:
         """
         return self.custom_ids
 
-    def _save_artist_to_artist_db(self, conn, basic_info: dict):
+    def _save_artist_to_artist_db(self, conn: Connection, basic_info: dict):
         """
         Sort the release into the relevant artist databases.
 
         :param conn: Database connection
+        :type conn: Connection
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
         """
@@ -181,11 +194,12 @@ class DatabaseManager:
 
         conn.commit()
 
-    def _save_style_genre_label_to_dbs(self, conn, basic_info: dict):
+    def _save_style_genre_label_to_dbs(self, conn: Connection, basic_info: dict):
         """
         Save the style, genre and label info into relevant databases.
 
         :param conn: Database connection
+        :type conn: Connection
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
         """
@@ -217,12 +231,13 @@ class DatabaseManager:
         conn.commit()
 
     def _save_custom_notes_to_dbs(
-        self, conn, basic_info: dict, notes: dict | None = None
+        self, conn: Connection, basic_info: dict, notes: dict | None = None
     ):
         """
         Save the custom notes to the databases.
 
         :param conn: Database connection
+        :type conn: Connection
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
         :param notes: Optional custom notes associated with the release
@@ -256,11 +271,14 @@ class DatabaseManager:
 
         conn.commit()
 
-    def save_release_to_db(self, conn, basic_info: dict, notes: dict | None = None):
+    def save_release_to_db(
+        self, conn: Connection, basic_info: dict, notes: dict | None = None
+    ):
         """
         Parses a single release dictionary and saves to normalised DB.
 
         :param conn: Database connection.
+        :type conn: Connection
         :param basic_info: Basic information dictionary from Discogs release
         :type basic_info: dict
         :param notes: Optional custom notes associated with the release
@@ -272,11 +290,12 @@ class DatabaseManager:
         self._save_style_genre_label_to_dbs(conn, basic_info)
         self._save_custom_notes_to_dbs(conn, basic_info, notes)
 
-    def create_custom_field_db(self, conn, field_id: int):
+    def create_custom_field_db(self, conn: Connection, field_id: int):
         """
         Create a table for storing custom field values.
 
         :param conn: Database connection
+        :type conn: Connection
         :param field_id: ID of the custom field
         :type field_id: int
         """
@@ -298,11 +317,11 @@ class DatabaseManager:
         :param release_list: List of releases to add.
         :type release_list: list
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             for basic_info, notes in release_list:
                 self.save_release_to_db(conn, basic_info, notes)
 
-    def get_artists_missing_sort_name(self):
+    def get_artists_missing_sort_name(self) -> list[int] | None:
         """
         Fetches artist IDs and names from the DB that lack a sort_name.
 
@@ -310,18 +329,21 @@ class DatabaseManager:
         :return: List of artists missing a sort name.
         :rtype: list
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT DISTINCT id, name FROM artists WHERE sort_name IS NULL"
             )
             return cursor.fetchall()
 
-    def get_first_release_from_artist(self, artist_id):
+    def get_first_release_from_artist(self, artist_id: int) -> int | None:
         """
         Get the first release with the matching artist ID.
+
+        :param artist_id: Artist ID
+        :type artist_id: int
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             return conn.execute(
                 "SELECT release_id FROM release_artists WHERE artist_id = ? LIMIT 1",
                 (artist_id,),
@@ -333,7 +355,7 @@ class DatabaseManager:
 
         :param updates_batch: Batch of tuples
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             conn.executemany(
                 "UPDATE artists SET sort_name = ? WHERE id = ?", updates_batch
             )
@@ -343,7 +365,7 @@ class DatabaseManager:
         """
         Delete the database.
         """
-        db_path = self.get_db_path()
+        db_path = self._get_db_path()
         if os.path.exists(db_path):
             os.remove(db_path)
 
@@ -705,7 +727,9 @@ class DatabaseManager:
         LIMIT ? OFFSET ?
         """
 
-    def get_releases_paginated(self, request: PaginatedReleaseRequest):
+    def get_releases_paginated(
+        self, request: PaginatedReleaseRequest
+    ) -> tuple[list, int]:
         """
         Coordinates fetching releases with full support for search, sorting, and pagination.
 
@@ -729,7 +753,7 @@ class DatabaseManager:
         # 2. Prepare Pagination
         offset = request.page * request.page_size
 
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             # 3. Get Total Count
             total_rows = self._get_filtered_count(conn, where_sql, search_params)
 
@@ -753,7 +777,7 @@ class DatabaseManager:
         :returns: List of dictionaries with 'id', 'name', and 'sort_name'.
         :rtype: list[dict]
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             query = """
             SELECT 
                 id, 
@@ -774,7 +798,7 @@ class DatabaseManager:
         :returns: The integer ID of the artist, or None if not found.
         :rtype: int | None
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             query = """
             SELECT
                 id
@@ -799,7 +823,7 @@ class DatabaseManager:
         :returns: List of dictionaries with 'id' and 'name'.
         :rtype: list[dict]
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             query = """
             SELECT 
                 id, 
@@ -819,7 +843,7 @@ class DatabaseManager:
         :returns: The integer ID of the genre, or None if not found.
         :rtype: int | None
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             query = """
             SELECT
                 id
@@ -844,7 +868,7 @@ class DatabaseManager:
         :returns: List of dictionaries with 'id' and 'name'.
         :rtype: list[dict]
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             query = """
             SELECT 
                 id, 
@@ -864,7 +888,7 @@ class DatabaseManager:
         :returns: The integer ID of the style, or None if not found.
         :rtype: int | None
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             query = """
             SELECT
                 id
@@ -889,7 +913,7 @@ class DatabaseManager:
         :returns: List of dictionaries with 'id' and 'name'.
         :rtype: list[dict]
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             query = """
             SELECT 
                 id, 
@@ -909,7 +933,7 @@ class DatabaseManager:
         :returns: The integer ID of the label, or None if not found.
         :rtype: int | None
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             query = """
             SELECT
                 id
@@ -934,7 +958,7 @@ class DatabaseManager:
         :returns: List of unique format strings.
         :rtype: list[str]
         """
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             query = """
             SELECT DISTINCT
                 format
@@ -956,7 +980,7 @@ class DatabaseManager:
         :rtype: Dict[int, List[str]]
         """
         custom_field_data = {}
-        with self.get_db_connection() as conn:
+        with self._get_db_connection() as conn:
             for field_id in self.get_custom_field_ids_set():
                 table_name = f"custom_field_{field_id}"
 
